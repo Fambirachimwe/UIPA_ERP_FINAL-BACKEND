@@ -14,17 +14,23 @@ const createDocumentSchema = z.object({
     department: z.string().min(1),
     projectId: z.string().optional(),
     projectNumber: z.string().optional(),
-    tags: z.array(z.string()).default([]),
+    tags: z.union([
+        z.array(z.string()),
+        z.string().transform((str) => str ? str.split(",").map(s => s.trim()).filter(Boolean) : [])
+    ]).default([]),
     category: z.string().optional(),
-    expiryDate: z.string().datetime().optional(),
+    expiryDate: z.string().optional(),
 });
 
 const updateDocumentSchema = z.object({
     title: z.string().min(1).optional(),
     description: z.string().optional(),
-    tags: z.array(z.string()).optional(),
+    tags: z.union([
+        z.array(z.string()),
+        z.string().transform((str) => str ? str.split(",").map(s => s.trim()).filter(Boolean) : [])
+    ]).optional(),
     category: z.string().optional(),
-    expiryDate: z.string().datetime().optional(),
+    expiryDate: z.string().optional(),
     status: z.enum(["active", "archived", "deleted"]).optional(),
 });
 

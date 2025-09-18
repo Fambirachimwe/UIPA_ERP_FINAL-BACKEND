@@ -198,7 +198,7 @@ export async function updateLeaveRequest(req: AuthenticatedRequest, res: Respons
     // Check if user owns this request (employees) or has permission (managers/admin)
     if (req.user?.role === "employee") {
         const employee = await Employee.findOne({ userId: req.user.id });
-        if (!employee || !request.employeeId.equals(employee._id)) {
+        if (!employee || !request.employeeId.equals(employee._id as any)) {
             return res.status(403).json({ error: "Cannot update another employee's request" });
         }
     }
@@ -224,7 +224,7 @@ export async function cancelLeaveRequest(req: AuthenticatedRequest, res: Respons
     // Check permissions
     if (req.user?.role === "employee") {
         const employee = await Employee.findOne({ userId: req.user.id });
-        if (!employee || !request.employeeId.equals(employee._id)) {
+        if (!employee || !request.employeeId.equals(employee._id as any)) {
             return res.status(403).json({ error: "Cannot cancel another employee's request" });
         }
     }

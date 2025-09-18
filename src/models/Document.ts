@@ -19,7 +19,7 @@ export interface DocumentDocument extends Document {
     description?: string;
     author: mongoose.Types.ObjectId;
     department: string;
-    projectId?: mongoose.Types.ObjectId;
+    projectId?: string;
 
     // File info
     documentUrl: string; // Main document URL
@@ -62,7 +62,7 @@ const documentSchema = new Schema<DocumentDocument>(
         description: { type: String },
         author: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
         department: { type: String, required: true, index: true },
-        projectId: { type: Schema.Types.ObjectId, ref: "Project" },
+        projectId: { type: String, ref: "Project" },
 
         // File info
         documentUrl: { type: String, required: true },

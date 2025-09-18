@@ -92,7 +92,7 @@ export async function bulkAllocateBalances(req: AuthenticatedRequest, res: Respo
                     { new: true, upsert: true }
                 );
                 results.push({ success: true, balance });
-            } catch (error) {
+            } catch (error: any) {
                 results.push({ success: false, error: error.message, allocation });
             }
         } else {

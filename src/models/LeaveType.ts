@@ -2,8 +2,8 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface LeaveTypeDocument extends Document {
     name: string;
-    defaultDays: number;
-    carryOverRules: string;
+    defaultDays?: number;
+    carryOverRules?: string;
     maxConsecutiveDays?: number;
     eligibility?: string;
     requiresApproval: boolean;
@@ -15,8 +15,8 @@ export interface LeaveTypeDocument extends Document {
 const leaveTypeSchema = new Schema<LeaveTypeDocument>(
     {
         name: { type: String, required: true, unique: true, index: true },
-        defaultDays: { type: Number, required: true, min: 0 },
-        carryOverRules: { type: String, required: true },
+        defaultDays: { type: Number, default: 0 },
+        carryOverRules: { type: String },
         maxConsecutiveDays: { type: Number, min: 1 },
         eligibility: { type: String },
         requiresApproval: { type: Boolean, default: true },
