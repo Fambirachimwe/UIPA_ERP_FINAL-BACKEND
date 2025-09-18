@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole, abacPolicy } from "../middleware/auth";
-import { listEmployees, getEmployee, createEmployee, updateEmployee, deleteEmployee } from "../controllers/employeesController";
+import { listEmployees, getEmployee, createEmployee, updateEmployee, deleteEmployee, createEmployeeWithUser } from "../controllers/employeesController";
 
 export const employeeRouter = Router();
 
@@ -34,6 +34,14 @@ employeeRouter.delete(
     requireAuth,
     requireRole(["admin"]),
     deleteEmployee
+);
+
+// Combined endpoint to create User + Employee in one transaction
+employeeRouter.post(
+    "/create-with-user",
+    requireAuth,
+    requireRole(["admin"]),
+    createEmployeeWithUser
 );
 
 

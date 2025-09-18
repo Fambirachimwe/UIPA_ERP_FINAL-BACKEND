@@ -8,6 +8,7 @@ import { employeeRouter } from "./routes/employeeRoutes";
 import { dashboardRouter } from "./routes/dashboardRoutes";
 import { contactRouter } from "./routes/contactRoutes";
 import { timeOffRouter } from "./routes/timeOffRoutes";
+import { documentRouter } from "./routes/documentRoutes";
 import { mountSwagger } from "./utils/swagger";
 
 export function createApp() {
@@ -29,6 +30,7 @@ export function createApp() {
     app.use("/api/dashboard", dashboardRouter);
     app.use("/api/contacts", contactRouter);
     app.use("/api/time-off", timeOffRouter);
+    app.use("/api/documents", documentRouter);
 
     mountSwagger(app);
 

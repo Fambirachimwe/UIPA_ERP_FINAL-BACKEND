@@ -16,7 +16,7 @@ export interface ApprovalContext {
 export interface ApprovalValidation {
     canApprove: boolean;
     error?: string;
-    level: "level1" | "final";
+    level: "level1" | "level2";
     newStatus: "approved_lvl1" | "approved_final" | "rejected";
 }
 
@@ -67,7 +67,7 @@ export async function validateApproval(
     if (autoApproval.autoApprove && approver.role === "admin") {
         return {
             canApprove: true,
-            level: "final",
+            level: "level2",
             newStatus: requestedAction === "approved" ? "approved_final" : "rejected"
         };
     }
@@ -100,11 +100,14 @@ function validateLevel1Approval(
     requestedAction: "approved" | "rejected"
 ): ApprovalValidation {
 
-    // Must be approver or admin role
-    if (!["approver", "admin"].includes(approver.role)) {
+    // Check if user has level1 approval authority
+    const approvalLevel = (approver.attributes as any)?.approval_level;
+    const hasLevel1Authority = approvalLevel === "level1" || approver.role === "admin";
+
+    if (!hasLevel1Authority) {
         return {
             canApprove: false,
-            error: "Only supervisors and admins can approve leave requests",
+            error: "Only level1 supervisors can approve leave requests at this stage",
             level: "level1",
             newStatus: "rejected"
         };
@@ -117,11 +120,11 @@ function validateLevel1Approval(
     // Admin can approve any level 1 request
     const isAdmin = approver.role === "admin";
 
-    // Department-based approval for approvers
+    // Level1 users can approve in their department
     const isSameDepartment = requestEmployee.department === approverEmployee.department;
-    const isDepartmentApprover = approver.role === "approver" && isSameDepartment;
+    const isLevel1Approver = approvalLevel === "level1" && isSameDepartment;
 
-    if (!isDirectSupervisor && !isAdmin && !isDepartmentApprover) {
+    if (!isDirectSupervisor && !isAdmin && !isLevel1Approver) {
         return {
             canApprove: false,
             error: "You can only approve requests from your direct reports or department",
@@ -138,7 +141,7 @@ function validateLevel1Approval(
 }
 
 /**
- * Validate Final (Admin) approval
+ * Validate Level 2 (Admin/CEO) approval
  */
 function validateFinalApproval(
     requestEmployee: any,
@@ -147,19 +150,22 @@ function validateFinalApproval(
     requestedAction: "approved" | "rejected"
 ): ApprovalValidation {
 
-    // Only admins can give final approval
-    if (approver.role !== "admin") {
+    // Check if user has level2 approval authority
+    const approvalLevel = (approver.attributes as any)?.approval_level;
+    const hasLevel2Authority = approvalLevel === "level2" || approver.role === "admin";
+
+    if (!hasLevel2Authority) {
         return {
             canApprove: false,
-            error: "Only administrators can give final approval",
-            level: "final",
+            error: "Only level2 admins and CEO can give final approval",
+            level: "level2",
             newStatus: "rejected"
         };
     }
 
     return {
         canApprove: true,
-        level: "final",
+        level: "level2",
         newStatus: requestedAction === "approved" ? "approved_final" : "rejected"
     };
 }
