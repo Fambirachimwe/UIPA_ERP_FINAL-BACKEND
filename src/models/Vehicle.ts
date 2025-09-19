@@ -4,7 +4,7 @@ export interface VehicleDocument extends Document {
     name: string;
     registrationNumber: string;
     make?: string;
-    model?: string;
+    vehicleModel?: string; // Renamed to avoid conflict with Document.model
     year?: number;
     mileage?: number;
     fuelType?: string;
@@ -26,7 +26,7 @@ const vehicleSchema = new Schema<VehicleDocument>(
         name: { type: String, required: true },
         registrationNumber: { type: String, required: true, unique: true, index: true },
         make: { type: String },
-        model: { type: String },
+        vehicleModel: { type: String },
         year: { type: Number },
         mileage: { type: Number },
         fuelType: { type: String },

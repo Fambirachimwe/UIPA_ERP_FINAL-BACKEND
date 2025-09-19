@@ -16,6 +16,8 @@ export interface LeaveRequestDocument extends Document {
     totalDays: number;
     reason: string;
     status: "submitted" | "approved_lvl1" | "approved_final" | "rejected" | "cancelled";
+    // only the manager approves the  request
+    managerId: mongoose.Types.ObjectId;
     approvalHistory: ApprovalHistoryItem[];
     documents?: string[];
     createdAt: Date;

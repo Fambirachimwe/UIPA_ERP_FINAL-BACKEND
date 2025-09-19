@@ -19,6 +19,11 @@ const options: swaggerJSDoc.Options = {
                     scheme: "bearer",
                     bearerFormat: "JWT",
                 },
+                cookieAuth: {
+                    type: "apiKey",
+                    in: "cookie",
+                    name: "access_token",
+                },
             },
             schemas: {
                 User: {
@@ -158,7 +163,7 @@ const options: swaggerJSDoc.Options = {
                 },
             },
         },
-        security: [{ bearerAuth: [] }],
+        security: [{ bearerAuth: [] }, { cookieAuth: [] }],
     },
     apis: [
         // Using inline JSDoc on route files would go here; for now we define paths programmatically below
@@ -187,17 +192,21 @@ swaggerSpec.paths["/api/auth/login"] = {
         },
         responses: {
             200: {
-                description: "Tokens and user",
+                description: "Login successful - tokens set as HTTP-only cookies",
                 content: {
                     "application/json": {
                         schema: {
                             type: "object",
                             properties: {
-                                accessToken: { type: "string" },
-                                refreshToken: { type: "string" },
                                 user: { $ref: "#/components/schemas/User" },
                             },
                         },
+                    },
+                },
+                headers: {
+                    "Set-Cookie": {
+                        description: "HTTP-only cookies for access_token and refresh_token",
+                        schema: { type: "string" },
                     },
                 },
             },
@@ -228,6 +237,100 @@ swaggerSpec.paths["/api/auth/register"] = {
             },
         },
         responses: { 201: { description: "Created" }, 409: { description: "Conflict" } },
+    },
+};
+
+swaggerSpec.paths["/api/auth/refresh"] = {
+    post: {
+        tags: ["Auth"],
+        summary: "Refresh access token",
+        description: "Refreshes access token using refresh token from HTTP-only cookie. Implements token rotation for enhanced security.",
+        requestBody: {
+            required: false,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        properties: {
+                            refreshToken: {
+                                type: "string",
+                                description: "Optional - refresh token in request body (cookie preferred)"
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Token refreshed successfully - new tokens set as HTTP-only cookies",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                success: { type: "boolean" },
+                            },
+                        },
+                    },
+                },
+                headers: {
+                    "Set-Cookie": {
+                        description: "New HTTP-only cookies for access_token and refresh_token",
+                        schema: { type: "string" },
+                    },
+                },
+            },
+            400: { description: "Missing refresh token" },
+            401: { description: "Invalid refresh token" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/auth/logout"] = {
+    post: {
+        tags: ["Auth"],
+        summary: "Logout user",
+        description: "Logs out user by invalidating refresh tokens and clearing HTTP-only cookies",
+        requestBody: {
+            required: false,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        properties: {
+                            refreshToken: {
+                                type: "string",
+                                description: "Optional - refresh token in request body (cookie preferred)"
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Logged out successfully - cookies cleared",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                success: { type: "boolean" },
+                                message: { type: "string" },
+                            },
+                        },
+                    },
+                },
+                headers: {
+                    "Set-Cookie": {
+                        description: "Cleared HTTP-only cookies",
+                        schema: { type: "string" },
+                    },
+                },
+            },
+            500: { description: "Internal server error" },
+        },
     },
 };
 

@@ -10,14 +10,20 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    // Try to get token from cookie first, then Authorization header as fallback
+    const cookieToken = req.cookies?.access_token;
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+    const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+    const token = cookieToken || headerToken;
+
     if (!token) return res.status(401).json({ error: "Missing token" });
+
     try {
         const payload = verifyAccessToken(token);
-        req.user = { id: payload.sub, role: payload.role, attributes: payload.attributes };
+        req.user = { id: payload.sub, role: payload.role, attributes: payload.attributes as Record<string, unknown> };
         next();
-    } catch {
+    } catch (error) {
         return res.status(401).json({ error: "Invalid token" });
     }
 }
