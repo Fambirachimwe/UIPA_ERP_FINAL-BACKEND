@@ -6,6 +6,8 @@ import { LeaveType } from "../models/LeaveType";
 import { LeaveBalance } from "../models/LeaveBalance";
 import { AuthenticatedRequest } from "../middleware/auth";
 import bcrypt from "bcryptjs";
+import path from "path";
+import fs from "fs";
 import mongoose from "mongoose";
 
 const createSchema = z.object({
@@ -365,6 +367,160 @@ export async function getEligibleSupervisors(req: AuthenticatedRequest, res: Res
         return res.json(supervisorsWithWorkload);
     } catch (error) {
         console.error('Error fetching eligible supervisors:', error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+// Employee Document Management
+
+const uploadDocumentSchema = z.object({
+    documentType: z.enum(["idCard", "resume", "contract", "certificate"]),
+    documentName: z.string().optional(), // For contracts and certificates
+});
+
+export async function uploadEmployeeDocument(req: AuthenticatedRequest, res: Response) {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    const { id } = req.params;
+    const parsed = uploadDocumentSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    // Check if file was uploaded
+    if (!req.file) return res.status(400).json({ error: "Document file is required" });
+
+    const { documentType, documentName } = parsed.data;
+
+    try {
+        const employee = await Employee.findById(id);
+        if (!employee) return res.status(404).json({ error: "Employee not found" });
+
+        const documentUrl = `/api/uploads/documents/${req.file.filename}`;
+
+        // Initialize documents object if it doesn't exist
+        if (!employee.documents) {
+            employee.documents = {};
+        }
+
+        // Handle different document types
+        switch (documentType) {
+            case "idCard":
+                employee.documents.idCardUrl = documentUrl;
+                break;
+            case "resume":
+                employee.documents.resumeUrl = documentUrl;
+                break;
+            case "contract":
+                if (!employee.documents.contracts) employee.documents.contracts = [];
+                employee.documents.contracts.push({
+                    name: documentName || req.file.originalname,
+                    url: documentUrl
+                });
+                break;
+            case "certificate":
+                if (!employee.documents.certificates) employee.documents.certificates = [];
+                employee.documents.certificates.push({
+                    name: documentName || req.file.originalname,
+                    url: documentUrl
+                });
+                break;
+            default:
+                return res.status(400).json({ error: "Invalid document type" });
+        }
+
+        await employee.save();
+
+        const updatedEmployee = await Employee.findById(id);
+        return res.json({
+            message: "Document uploaded successfully",
+            employee: updatedEmployee,
+            uploadedDocument: {
+                type: documentType,
+                name: documentName || req.file.originalname,
+                url: documentUrl,
+                size: req.file.size,
+                mimeType: req.file.mimetype
+            }
+        });
+    } catch (error: any) {
+        // Clean up uploaded file if document creation fails
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        console.error('Error uploading employee document:', error);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+export async function deleteEmployeeDocument(req: AuthenticatedRequest, res: Response) {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    const { id } = req.params;
+    const { documentType, documentIndex } = req.body;
+
+    try {
+        const employee = await Employee.findById(id);
+        if (!employee) return res.status(404).json({ error: "Employee not found" });
+
+        if (!employee.documents) {
+            return res.status(404).json({ error: "No documents found" });
+        }
+
+        let documentPath: string | undefined;
+
+        // Handle different document types
+        switch (documentType) {
+            case "idCard":
+                if (employee.documents.idCardUrl) {
+                    documentPath = employee.documents.idCardUrl;
+                    employee.documents.idCardUrl = undefined;
+                }
+                break;
+            case "resume":
+                if (employee.documents.resumeUrl) {
+                    documentPath = employee.documents.resumeUrl;
+                    employee.documents.resumeUrl = undefined;
+                }
+                break;
+            case "contract":
+                if (employee.documents.contracts && employee.documents.contracts[documentIndex]) {
+                    documentPath = employee.documents.contracts[documentIndex].url;
+                    employee.documents.contracts.splice(documentIndex, 1);
+                }
+                break;
+            case "certificate":
+                if (employee.documents.certificates && employee.documents.certificates[documentIndex]) {
+                    documentPath = employee.documents.certificates[documentIndex].url;
+                    employee.documents.certificates.splice(documentIndex, 1);
+                }
+                break;
+            default:
+                return res.status(400).json({ error: "Invalid document type" });
+        }
+
+        if (!documentPath) {
+            return res.status(404).json({ error: "Document not found" });
+        }
+
+        await employee.save();
+
+        // Try to delete the physical file
+        try {
+            const fullPath = path.join(process.cwd(), documentPath);
+            if (fs.existsSync(fullPath)) {
+                fs.unlinkSync(fullPath);
+            }
+        } catch (fileError) {
+            console.error('Error deleting file:', fileError);
+            // Don't fail the request if file deletion fails
+        }
+
+        const updatedEmployee = await Employee.findById(id);
+        return res.json({
+            message: "Document deleted successfully",
+            employee: updatedEmployee
+        });
+    } catch (error: any) {
+        console.error('Error deleting employee document:', error);
         return res.status(500).json({ error: "Internal server error" });
     }
 }

@@ -822,6 +822,186 @@ swaggerSpec.paths["/api/documents/{id}/versions"] = {
     },
 };
 
+// Employee Document Management
+swaggerSpec.paths["/api/employees/{id}/documents/upload"] = {
+    post: {
+        tags: ["Employee Documents"],
+        summary: "Upload employee document",
+        description: "Upload a document for a specific employee (Admin only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+            {
+                in: "path",
+                name: "id",
+                required: true,
+                schema: { type: "string" },
+                description: "Employee ID"
+            }
+        ],
+        requestBody: {
+            required: true,
+            content: {
+                "multipart/form-data": {
+                    schema: {
+                        type: "object",
+                        required: ["document", "documentType"],
+                        properties: {
+                            document: {
+                                type: "string",
+                                format: "binary",
+                                description: "Document file to upload"
+                            },
+                            documentType: {
+                                type: "string",
+                                enum: ["idCard", "resume", "contract", "certificate"],
+                                description: "Type of document being uploaded"
+                            },
+                            documentName: {
+                                type: "string",
+                                description: "Custom name for the document (required for contracts and certificates)"
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Document uploaded successfully",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                message: { type: "string" },
+                                employee: {
+                                    type: "object",
+                                    description: "Updated employee object"
+                                },
+                                uploadedDocument: {
+                                    type: "object",
+                                    properties: {
+                                        type: { type: "string" },
+                                        name: { type: "string" },
+                                        url: { type: "string" },
+                                        size: { type: "number" },
+                                        mimeType: { type: "string" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            400: { description: "Bad request - invalid file or missing required fields" },
+            401: { description: "Unauthorized" },
+            403: { description: "Forbidden - admin access required" },
+            404: { description: "Employee not found" },
+            500: { description: "Internal server error" }
+        },
+    },
+};
+
+swaggerSpec.paths["/api/employees/{id}/documents"] = {
+    delete: {
+        tags: ["Employee Documents"],
+        summary: "Delete employee document",
+        description: "Delete a specific document for an employee (Admin only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+            {
+                in: "path",
+                name: "id",
+                required: true,
+                schema: { type: "string" },
+                description: "Employee ID"
+            }
+        ],
+        requestBody: {
+            required: true,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        required: ["documentType"],
+                        properties: {
+                            documentType: {
+                                type: "string",
+                                enum: ["idCard", "resume", "contract", "certificate"],
+                                description: "Type of document to delete"
+                            },
+                            documentIndex: {
+                                type: "number",
+                                description: "Index of document to delete (required for contracts and certificates)"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        responses: {
+            200: {
+                description: "Document deleted successfully",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                message: { type: "string" },
+                                employee: {
+                                    type: "object",
+                                    description: "Updated employee object"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            400: { description: "Bad request - invalid document type or index" },
+            401: { description: "Unauthorized" },
+            403: { description: "Forbidden - admin access required" },
+            404: { description: "Employee or document not found" },
+            500: { description: "Internal server error" }
+        },
+    },
+};
+
+swaggerSpec.paths["/api/employees/documents/{filename}"] = {
+    get: {
+        tags: ["Employee Documents"],
+        summary: "View employee document",
+        description: "Retrieve and view a specific employee document file",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+            {
+                in: "path",
+                name: "filename",
+                required: true,
+                schema: { type: "string" },
+                description: "Document filename"
+            }
+        ],
+        responses: {
+            200: {
+                description: "Document file",
+                content: {
+                    "application/pdf": { schema: { type: "string", format: "binary" } },
+                    "application/msword": { schema: { type: "string", format: "binary" } },
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                        schema: { type: "string", format: "binary" }
+                    },
+                    "image/jpeg": { schema: { type: "string", format: "binary" } },
+                    "image/png": { schema: { type: "string", format: "binary" } },
+                    "image/gif": { schema: { type: "string", format: "binary" } }
+                }
+            },
+            401: { description: "Unauthorized" },
+            404: { description: "File not found" },
+            500: { description: "Internal server error" }
+        },
+    },
+};
+
 export function mountSwagger(app: Express) {
     app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }

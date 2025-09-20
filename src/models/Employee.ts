@@ -14,7 +14,8 @@ export interface EmployeeDocument extends Document {
     documents?: {
         idCardUrl?: string;
         resumeUrl?: string;
-        certificates?: string[];
+        contracts?: { name: string, url: string }[];
+        certificates?: { name: string, url: string }[];
     };
     createdAt: Date;
     updatedAt: Date;
@@ -35,7 +36,12 @@ const employeeSchema = new Schema<EmployeeDocument>(
         documents: {
             idCardUrl: { type: String },
             resumeUrl: { type: String },
-            certificates: [{ type: String }],
+            contracts: [
+                { name: String, url: String }
+            ],
+            certificates: [
+                { name: String, url: String }
+            ],
         },
     },
     { timestamps: true }
