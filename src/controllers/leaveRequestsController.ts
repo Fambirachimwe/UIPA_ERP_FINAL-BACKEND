@@ -11,6 +11,7 @@ const createRequestSchema = z.object({
     startDate: z.string().transform((str) => new Date(str)),
     endDate: z.string().transform((str) => new Date(str)),
     reason: z.string().min(1),
+    supervisorId: z.string().optional(), // Selected supervisor for approval
     documents: z.array(z.string().url()).optional(),
 });
 
@@ -41,27 +42,23 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
     const { status, startDate, endDate, pending } = req.query;
     let query: any = {};
 
+    // console.log("this is the user in the leave requests controller", req.user);
+
     // Build query based on user role
     if (req.user.role === "employee") {
         const employee = await Employee.findOne({ userId: req.user.id });
         if (!employee) return res.status(404).json({ error: "Employee profile not found" });
         query.employeeId = employee._id;
+        console.log("this is the query", query);
     } else if (req.user.role === "approver") {
         // Approvers see requests from their direct reports and department
         const approverEmployee = await Employee.findOne({ userId: req.user.id });
+
+        console.log("this is the approver employee", approverEmployee);
         if (approverEmployee) {
-            const directReports = await Employee.find({ manager: approverEmployee._id });
-            const departmentEmployees = await Employee.find({
-                department: approverEmployee.department,
-                _id: { $ne: approverEmployee._id }
-            });
 
-            const employeeIds = [
-                ...directReports.map(emp => emp._id),
-                ...departmentEmployees.map(emp => emp._id)
-            ];
-
-            query.employeeId = { $in: employeeIds };
+            // i want to display only the requests that  approverEmployee is the supervisor
+            query.supervisorId = approverEmployee._id;
 
             // If requesting pending items, show only submitted requests for approvers
             if (pending === "true") {
@@ -75,6 +72,8 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
         }
     }
 
+
+    console.log("this is the query", query);
     if (status && pending !== "true") query.status = status;
     if (startDate || endDate) {
         query.startDate = {};
@@ -89,6 +88,8 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
         .sort({ createdAt: -1 })
         .limit(100);
 
+    console.log("requests", requests);
+
     return res.json(requests);
 }
 
@@ -98,7 +99,6 @@ export async function getLeaveRequest(req: Request, res: Response) {
         .populate("employeeId", "name email")
         .populate("leaveTypeId", "name")
         .populate("approvalHistory.approverId", "email");
-
     if (!request) return res.status(404).json({ error: "Leave request not found" });
     return res.json(request);
 }
@@ -109,11 +109,35 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
     const parsed = createRequestSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const { leaveTypeId, startDate, endDate, reason, documents } = parsed.data;
+    const { leaveTypeId, startDate, endDate, reason, supervisorId, documents } = parsed.data;
 
     // Find employee profile
     const employee = await Employee.findOne({ userId: req.user.id });
     if (!employee) return res.status(404).json({ error: "Employee profile not found" });
+
+    // Validate supervisor if provided
+    let validatedSupervisorId = supervisorId;
+    if (supervisorId) {
+        const supervisor = await Employee.findById(supervisorId).populate('userId');
+        if (!supervisor || !supervisor.userId) {
+            return res.status(400).json({ error: "Invalid supervisor selected" });
+        }
+
+        // Check if supervisor has approval rights
+        const supervisorUser = supervisor.userId as any;
+        const hasApprovalRights = supervisorUser.role === 'admin' ||
+            supervisorUser.role === 'approver' ||
+            supervisorUser.attributes?.approval_level === 'level1';
+
+        if (!hasApprovalRights) {
+            return res.status(400).json({ error: "Selected supervisor does not have approval rights" });
+        }
+    } else {
+        // If no supervisor selected, use direct manager if available
+        if (employee.manager) {
+            validatedSupervisorId = employee.manager.toString();
+        }
+    }
 
     // Validate dates
     if (startDate > endDate) {
@@ -167,6 +191,7 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
         endDate,
         totalDays,
         reason,
+        supervisorId: validatedSupervisorId,
         documents,
     });
 
@@ -175,9 +200,25 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
         $inc: { pending: totalDays }
     });
 
+    // Create notification for supervisor if one is assigned
+    if (validatedSupervisorId) {
+        try {
+            const { notifyLeaveRequestSubmitted } = await import("../services/notificationService");
+            await notifyLeaveRequestSubmitted(
+                (leaveRequest._id as any).toString(),
+                (employee._id as any).toString(),
+                validatedSupervisorId
+            );
+        } catch (error) {
+            console.error('Error creating notification:', error);
+            // Don't fail the request creation if notification fails
+        }
+    }
+
     const populatedRequest = await LeaveRequest.findById(leaveRequest._id)
         .populate("employeeId", "name email")
-        .populate("leaveTypeId", "name");
+        .populate("leaveTypeId", "name")
+        .populate("supervisorId", "name email department");
 
     return res.status(201).json(populatedRequest);
 }
@@ -287,6 +328,22 @@ export async function approveLeaveRequest(req: AuthenticatedRequest, res: Respon
 
     request.status = validation.newStatus as any;
     await request.save();
+
+    // Create notification for employee about status change
+    try {
+        const { notifyLeaveRequestStatusChange } = await import("../services/notificationService");
+        await notifyLeaveRequestStatusChange(
+            (request._id as any).toString(),
+            (request.employeeId as any).toString(),
+            req.user!.id,
+            status,
+            validation.level,
+            comment
+        );
+    } catch (error) {
+        console.error('Error creating approval notification:', error);
+        // Don't fail the approval if notification fails
+    }
 
     // Update balance if final approval or rejection
     if (validation.newStatus === "approved_final") {

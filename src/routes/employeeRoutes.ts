@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { requireAuth, requireRole, abacPolicy } from "../middleware/auth";
-import { listEmployees, getEmployee, createEmployee, updateEmployee, deleteEmployee, createEmployeeWithUser } from "../controllers/employeesController";
+import { listEmployees, getEmployee, createEmployee, updateEmployee, deleteEmployee, createEmployeeWithUser, getEligibleSupervisors, initializeLeaveBalances } from "../controllers/employeesController";
 
 export const employeeRouter = Router();
 
 // Everyone authenticated can list & read
 employeeRouter.get("/", requireAuth, listEmployees);
+employeeRouter.get("/eligible-supervisors", requireAuth, getEligibleSupervisors);
 employeeRouter.get("/:id", requireAuth, getEmployee);
 
 // Create/Update/Delete
@@ -42,6 +43,14 @@ employeeRouter.post(
     requireAuth,
     requireRole(["admin"]),
     createEmployeeWithUser
+);
+
+// Initialize leave balances for an employee
+employeeRouter.post(
+    "/:employeeId/initialize-leave-balances",
+    requireAuth,
+    requireRole(["admin"]),
+    initializeLeaveBalances
 );
 
 

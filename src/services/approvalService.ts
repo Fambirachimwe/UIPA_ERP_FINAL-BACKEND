@@ -63,18 +63,18 @@ export async function validateApproval(
     }
 
     // Check auto-approval rules first
-    const autoApproval = checkAutoApprovalRules(request, leaveType);
-    if (autoApproval.autoApprove && approver.role === "admin") {
-        return {
-            canApprove: true,
-            level: "level2",
-            newStatus: requestedAction === "approved" ? "approved_final" : "rejected"
-        };
-    }
+    // const autoApproval = checkAutoApprovalRules(request, leaveType);
+    // if (autoApproval.autoApprove && approver.role === "admin") {
+    //     return {
+    //         canApprove: true,
+    //         level: "level2",
+    //         newStatus: requestedAction === "approved" ? "approved_final" : "rejected"
+    //     };
+    // }
 
     // Level 1 Approval (Supervisor)
     if (request.status === "submitted") {
-        return validateLevel1Approval(requestEmployee, approverEmployee, approver, requestedAction);
+        return validateLevel1Approval(request, requestEmployee, approverEmployee, approver, requestedAction);
     }
 
     // Level 2 Approval (Admin/Final)
@@ -94,40 +94,35 @@ export async function validateApproval(
  * Validate Level 1 (Supervisor) approval
  */
 function validateLevel1Approval(
+    request: any,
     requestEmployee: any,
     approverEmployee: any,
     approver: any,
     requestedAction: "approved" | "rejected"
 ): ApprovalValidation {
 
-    // Check if user has level1 approval authority
-    const approvalLevel = (approver.attributes as any)?.approval_level;
-    const hasLevel1Authority = approvalLevel === "level1" || approver.role === "admin";
-
-    if (!hasLevel1Authority) {
+    // Admin can approve any level 1 request
+    if (approver.role === "admin") {
         return {
-            canApprove: false,
-            error: "Only level1 supervisors can approve leave requests at this stage",
+            canApprove: true,
             level: "level1",
-            newStatus: "rejected"
+            newStatus: requestedAction === "approved" ? "approved_lvl1" : "rejected"
         };
     }
 
-    // Check if approver is the direct supervisor
-    const isDirectSupervisor = requestEmployee.manager &&
-        requestEmployee.manager._id.equals(approverEmployee._id);
+    // Check if approver is the selected supervisor for this request
+    const isSelectedSupervisor = request.supervisorId &&
+        request.supervisorId.equals(approverEmployee._id);
 
-    // Admin can approve any level 1 request
-    const isAdmin = approver.role === "admin";
+    // Check if approver is the direct manager of the employee
+    const isDirectManager = requestEmployee.manager &&
+        requestEmployee.manager.equals(approverEmployee._id);
 
-    // Level1 users can approve in their department
-    const isSameDepartment = requestEmployee.department === approverEmployee.department;
-    const isLevel1Approver = approvalLevel === "level1" && isSameDepartment;
-
-    if (!isDirectSupervisor && !isAdmin && !isLevel1Approver) {
+    // Non-admin users can only approve if they are the supervisor or direct manager
+    if (!isSelectedSupervisor && !isDirectManager) {
         return {
             canApprove: false,
-            error: "You can only approve requests from your direct reports or department",
+            error: "You can only approve leave requests where you are the selected supervisor or direct manager of the employee",
             level: "level1",
             newStatus: "rejected"
         };
@@ -150,14 +145,11 @@ function validateFinalApproval(
     requestedAction: "approved" | "rejected"
 ): ApprovalValidation {
 
-    // Check if user has level2 approval authority
-    const approvalLevel = (approver.attributes as any)?.approval_level;
-    const hasLevel2Authority = approvalLevel === "level2" || approver.role === "admin";
-
-    if (!hasLevel2Authority) {
+    // Only admins can give final approval
+    if (approver.role !== "admin") {
         return {
             canApprove: false,
-            error: "Only level2 admins and CEO can give final approval",
+            error: "Only admins can give final approval",
             level: "level2",
             newStatus: "rejected"
         };
@@ -197,31 +189,38 @@ export async function getPendingRequestsForApprover(approverId: string, role: st
     let query: any = {};
 
     if (role === "admin") {
-        // Admins see all requests needing final approval
+        // Admins see all requests needing approval at any level
         query = {
             status: { $in: ["submitted", "approved_lvl1"] }
         };
-    } else if (role === "approver") {
-        // Approvers see requests from their direct reports or department
+    } else {
+        // Non-admin users see only requests where they are the supervisor or direct manager
         const directReports = await Employee.find({ manager: approverEmployee._id });
-        const departmentEmployees = await Employee.find({
-            department: approverEmployee.department,
-            _id: { $ne: approverEmployee._id }
-        });
-
-        const employeeIds = [
-            ...directReports.map(emp => emp._id),
-            ...departmentEmployees.map(emp => emp._id)
-        ];
+        const directReportIds = directReports.map(emp => emp._id);
 
         query = {
-            employeeId: { $in: employeeIds },
-            status: "submitted"
+            $or: [
+                // Requests where they are the selected supervisor
+                { supervisorId: approverEmployee._id, status: "submitted" },
+                // Requests from their direct reports (where no specific supervisor was selected)
+                {
+                    employeeId: { $in: directReportIds },
+                    supervisorId: { $exists: false },
+                    status: "submitted"
+                },
+                // Requests from their direct reports where they are also the selected supervisor
+                {
+                    employeeId: { $in: directReportIds },
+                    supervisorId: approverEmployee._id,
+                    status: "submitted"
+                }
+            ]
         };
     }
 
     return LeaveRequest.find(query)
         .populate("employeeId", "name email department")
         .populate("leaveTypeId", "name")
+        .populate("supervisorId", "name email department")
         .sort({ createdAt: -1 });
 }

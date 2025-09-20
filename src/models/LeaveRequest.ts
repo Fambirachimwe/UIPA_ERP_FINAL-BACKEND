@@ -16,8 +16,8 @@ export interface LeaveRequestDocument extends Document {
     totalDays: number;
     reason: string;
     status: "submitted" | "approved_lvl1" | "approved_final" | "rejected" | "cancelled";
-    // only the manager approves the  request
-    managerId: mongoose.Types.ObjectId;
+    // Selected supervisor for this specific request (overrides default manager)
+    supervisorId?: mongoose.Types.ObjectId;
     approvalHistory: ApprovalHistoryItem[];
     documents?: string[];
     createdAt: Date;
@@ -46,6 +46,7 @@ const leaveRequestSchema = new Schema<LeaveRequestDocument>(
             default: "submitted",
             index: true,
         },
+        supervisorId: { type: Schema.Types.ObjectId, ref: "Employee", index: true },
         approvalHistory: [approvalHistorySchema],
         documents: [{ type: String }],
     },

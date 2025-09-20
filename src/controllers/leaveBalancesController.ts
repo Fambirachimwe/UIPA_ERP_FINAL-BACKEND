@@ -16,6 +16,7 @@ const allocateBalanceSchema = z.object({
 export async function getMyBalances(req: AuthenticatedRequest, res: Response) {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
+    console.log("this is the user", req.user);
     // Find employee record for this user
     const employee = await Employee.findOne({ userId: req.user.id });
     if (!employee) return res.status(404).json({ error: "Employee profile not found" });

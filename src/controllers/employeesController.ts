@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { Employee } from "../models/Employee";
 import { User } from "../models/User";
+import { LeaveType } from "../models/LeaveType";
+import { LeaveBalance } from "../models/LeaveBalance";
 import { AuthenticatedRequest } from "../middleware/auth";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
@@ -168,9 +170,47 @@ export async function createEmployeeWithUser(req: AuthenticatedRequest, res: Res
 
         if (manager) {
             employeeData.manager = manager;
+
         }
 
         const employee = await Employee.create(employeeData);
+
+        console.warn('employee', employee);
+
+        // Initialize leave balances for all active leave types
+        try {
+            const activeLeaveTypes = await LeaveType.find({ isActive: true });
+            const currentYear = new Date().getFullYear();
+
+            const leaveBalances = activeLeaveTypes.map(leaveType => ({
+                employeeId: employee._id,
+                leaveTypeId: leaveType._id,
+                year: currentYear,
+                allocated: leaveType.defaultDays || 0,
+                used: 0,
+                pending: 0,
+                carryOver: 0,
+            }));
+
+            // console.log('leaveBalances', leaveBalances);
+
+            if (leaveBalances.length > 0) {
+                await LeaveBalance.insertMany(leaveBalances);
+                console.log(`Created ${leaveBalances.length} leave balance records for employee: ${employee.name}`);
+            }
+
+            console.log('leaveBalances inserted');
+        } catch (balanceError) {
+            console.error('Error creating leave balances:', balanceError);
+            // Don't fail the employee creation if leave balance creation fails
+            // This is a non-critical operation that can be done manually later
+        }
+
+        // Get the created leave balances count for response
+        const leaveBalancesCount = await LeaveBalance.countDocuments({
+            employeeId: employee._id,
+            year: new Date().getFullYear()
+        });
 
         // Return created employee with user info
         const result = {
@@ -183,11 +223,149 @@ export async function createEmployeeWithUser(req: AuthenticatedRequest, res: Res
             role: user.role,
             approval_level: user.attributes.approval_level,
             createdAt: employee.createdAt,
+            leaveBalancesInitialized: leaveBalancesCount,
+            message: `Employee created successfully with ${leaveBalancesCount} leave balance(s) initialized for ${new Date().getFullYear()}`,
         };
 
         return res.status(201).json(result);
     } catch (error: any) {
         return res.status(400).json({ error: error.message });
+    }
+}
+
+export async function initializeLeaveBalances(req: AuthenticatedRequest, res: Response) {
+    try {
+        const { employeeId } = req.params;
+        const { year } = req.body;
+
+        const targetYear = year || new Date().getFullYear();
+
+        // Find the employee
+        const employee = await Employee.findById(employeeId);
+        if (!employee) {
+            return res.status(404).json({ error: "Employee not found" });
+        }
+
+        // Check if leave balances already exist for this year
+        const existingBalances = await LeaveBalance.find({
+            employeeId,
+            year: targetYear
+        });
+
+        if (existingBalances.length > 0) {
+            return res.status(409).json({
+                error: `Leave balances already exist for employee ${employee.name} for year ${targetYear}`,
+                existingBalances: existingBalances.length
+            });
+        }
+
+        // Get all active leave types
+        const activeLeaveTypes = await LeaveType.find({ isActive: true });
+
+        if (activeLeaveTypes.length === 0) {
+            return res.status(400).json({ error: "No active leave types found" });
+        }
+
+        // Create leave balances
+        const leaveBalances = activeLeaveTypes.map(leaveType => ({
+            employeeId: employee._id,
+            leaveTypeId: leaveType._id,
+            year: targetYear,
+            allocated: leaveType.defaultDays || 0,
+            used: 0,
+            pending: 0,
+            carryOver: 0,
+        }));
+
+        const createdBalances = await LeaveBalance.insertMany(leaveBalances);
+
+        return res.status(201).json({
+            success: true,
+            message: `Successfully initialized ${createdBalances.length} leave balances for ${employee.name} for year ${targetYear}`,
+            employee: {
+                id: employee._id,
+                name: employee.name,
+                email: employee.email,
+                department: employee.department,
+            },
+            balancesCreated: createdBalances.length,
+            year: targetYear,
+        });
+
+    } catch (error: any) {
+        console.error('Error initializing leave balances:', error);
+        return res.status(500).json({ error: error.message });
+    }
+}
+
+export async function getEligibleSupervisors(req: AuthenticatedRequest, res: Response) {
+    try {
+        const currentUserId = req.user!.id;
+
+        console.log(currentUserId);
+
+        // Get current user's employee record
+        const currentEmployee = await Employee.findOne({ userId: currentUserId });
+        if (!currentEmployee) {
+            return res.status(404).json({ error: "Employee profile not found" });
+        }
+
+        // Find eligible supervisors
+        // 1. Users with approval_level: "level1" 
+        // 2. Users with role: "admin"
+        // 3. Same department supervisors
+        // 4. Direct manager from Employee.manager field
+
+        const eligibleSupervisors = await Employee.find().populate({
+            path: 'userId',
+            match: {
+                $or: [
+                    { role: 'admin' },
+                    { role: 'approver' },
+                    { 'attributes.approval_level': 'level1' },
+                    { 'attributes.approval_level': 'level2' }
+                ]
+            },
+            select: 'email role attributes'
+        });
+
+        // Filter out results where userId population failed (no approval rights)
+        const validSupervisors = eligibleSupervisors.filter(emp => emp.userId);
+
+        // Get pending request counts for each supervisor
+        const { LeaveRequest } = await import("../models/LeaveRequest");
+        const supervisorsWithWorkload = await Promise.all(
+            validSupervisors.map(async (supervisor) => {
+                const pendingCount = await LeaveRequest.countDocuments({
+                    supervisorId: supervisor._id,
+                    status: 'submitted'
+                });
+
+                return {
+                    id: supervisor._id,
+                    name: supervisor.name,
+                    email: supervisor.email,
+                    department: supervisor.department,
+                    position: supervisor.position,
+                    isDirectManager: (supervisor._id as any).equals(currentEmployee.manager),
+                    pendingApprovals: pendingCount,
+                    userRole: (supervisor.userId as any)?.role,
+                    approvalLevel: (supervisor.userId as any)?.attributes?.approval_level
+                };
+            })
+        );
+
+        // Sort by direct manager first, then by pending workload
+        supervisorsWithWorkload.sort((a, b) => {
+            if (a.isDirectManager && !b.isDirectManager) return -1;
+            if (!a.isDirectManager && b.isDirectManager) return 1;
+            return a.pendingApprovals - b.pendingApprovals;
+        });
+
+        return res.json(supervisorsWithWorkload);
+    } catch (error) {
+        console.error('Error fetching eligible supervisors:', error);
+        return res.status(500).json({ error: "Internal server error" });
     }
 }
 

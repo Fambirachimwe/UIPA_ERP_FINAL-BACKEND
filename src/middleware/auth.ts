@@ -22,6 +22,7 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
     try {
         const payload = verifyAccessToken(token);
         req.user = { id: payload.sub, role: payload.role, attributes: payload.attributes as Record<string, unknown> };
+        console.log("this is the user", req.user);
         next();
     } catch (error) {
         return res.status(401).json({ error: "Invalid token" });

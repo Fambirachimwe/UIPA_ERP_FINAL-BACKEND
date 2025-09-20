@@ -411,12 +411,68 @@ swaggerSpec.paths["/api/employees/create-with-user"] = {
                                 role: { type: "string" },
                                 approval_level: { type: "string" },
                                 createdAt: { type: "string", format: "date-time" },
+                                leaveBalancesInitialized: { type: "number" },
+                                message: { type: "string" },
                             },
                         },
                     },
                 },
             },
             409: { description: "Email or Employee ID already in use" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/employees/{employeeId}/initialize-leave-balances"] = {
+    post: {
+        tags: ["Employees"],
+        summary: "Initialize leave balances for an employee (Admin only)",
+        description: "Creates leave balance records for all active leave types for the specified employee and year",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+            { in: "path", name: "employeeId", required: true, schema: { type: "string" } }
+        ],
+        requestBody: {
+            required: false,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        properties: {
+                            year: { type: "number", description: "Year for leave balances (defaults to current year)" },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Leave balances initialized successfully",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                success: { type: "boolean" },
+                                message: { type: "string" },
+                                employee: {
+                                    type: "object",
+                                    properties: {
+                                        id: { type: "string" },
+                                        name: { type: "string" },
+                                        email: { type: "string" },
+                                        department: { type: "string" },
+                                    },
+                                },
+                                balancesCreated: { type: "number" },
+                                year: { type: "number" },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { description: "Employee not found" },
+            409: { description: "Leave balances already exist for this year" },
         },
     },
 };
