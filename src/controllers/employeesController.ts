@@ -177,7 +177,7 @@ export async function createEmployeeWithUser(req: AuthenticatedRequest, res: Res
 
         const employee = await Employee.create(employeeData);
 
-        console.warn('employee', employee);
+        // console.warn('employee', employee);
 
         // Initialize leave balances for all active leave types
         try {
@@ -201,7 +201,7 @@ export async function createEmployeeWithUser(req: AuthenticatedRequest, res: Res
                 console.log(`Created ${leaveBalances.length} leave balance records for employee: ${employee.name}`);
             }
 
-            console.log('leaveBalances inserted');
+            // console.log('leaveBalances inserted');
         } catch (balanceError) {
             console.error('Error creating leave balances:', balanceError);
             // Don't fail the employee creation if leave balance creation fails

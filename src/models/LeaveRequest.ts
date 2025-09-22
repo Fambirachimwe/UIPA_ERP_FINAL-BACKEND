@@ -9,7 +9,7 @@ export interface ApprovalHistoryItem {
 }
 
 export interface LeaveRequestDocument extends Document {
-    employeeId: mongoose.Types.ObjectId;
+    employeeId: mongoose.Types.ObjectId; // stores User _id per requirement
     leaveTypeId: mongoose.Types.ObjectId;
     startDate: Date;
     endDate: Date;
@@ -34,7 +34,7 @@ const approvalHistorySchema = new Schema({
 
 const leaveRequestSchema = new Schema<LeaveRequestDocument>(
     {
-        employeeId: { type: Schema.Types.ObjectId, ref: "Employee", required: true, index: true },
+        employeeId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
         leaveTypeId: { type: Schema.Types.ObjectId, ref: "LeaveType", required: true, index: true },
         startDate: { type: Date, required: true, index: true },
         endDate: { type: Date, required: true, index: true },

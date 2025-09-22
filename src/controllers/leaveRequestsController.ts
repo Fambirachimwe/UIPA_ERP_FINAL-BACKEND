@@ -4,7 +4,9 @@ import { LeaveRequest } from "../models/LeaveRequest";
 import { LeaveBalance } from "../models/LeaveBalance";
 import { LeaveType } from "../models/LeaveType";
 import { Employee } from "../models/Employee";
+import { User } from "../models/User";
 import { AuthenticatedRequest } from "../middleware/auth";
+import { EmailService } from "../services/emailService";
 
 const createRequestSchema = z.object({
     leaveTypeId: z.string(),
@@ -46,9 +48,8 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
 
     // Build query based on user role
     if (req.user.role === "employee") {
-        const employee = await Employee.findOne({ userId: req.user.id });
-        if (!employee) return res.status(404).json({ error: "Employee profile not found" });
-        query.employeeId = employee._id;
+        // Using user id as the employeeId stored on LeaveRequest
+        query.employeeId = req.user.id;
         console.log("this is the query", query);
     } else if (req.user.role === "approver") {
         // Approvers see requests from their direct reports and department
@@ -82,13 +83,13 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
     }
 
     const requests = await LeaveRequest.find(query)
-        .populate("employeeId", "name email department")
+        .populate("employeeId", "email")
         .populate("leaveTypeId", "name")
         .populate("approvalHistory.approverId", "email")
         .sort({ createdAt: -1 })
         .limit(100);
 
-    console.log("requests", requests);
+    // console.log("requests", requests);
 
     return res.json(requests);
 }
@@ -96,7 +97,7 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
 export async function getLeaveRequest(req: Request, res: Response) {
     const { id } = req.params;
     const request = await LeaveRequest.findById(id)
-        .populate("employeeId", "name email")
+        .populate("employeeId", "email")
         .populate("leaveTypeId", "name")
         .populate("approvalHistory.approverId", "email");
     if (!request) return res.status(404).json({ error: "Leave request not found" });
@@ -105,6 +106,8 @@ export async function getLeaveRequest(req: Request, res: Response) {
 
 export async function createLeaveRequest(req: AuthenticatedRequest, res: Response) {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+    console.log("this is the user  in the leave requests controller", req.user);
 
     const parsed = createRequestSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -153,7 +156,7 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
 
     // Check for overlapping requests
     const overlapping = await LeaveRequest.findOne({
-        employeeId: employee._id,
+        employeeId: req.user.id,
         status: { $in: ["submitted", "approved_lvl1", "approved_final"] },
         $or: [
             { startDate: { $lte: endDate }, endDate: { $gte: startDate } }
@@ -185,7 +188,7 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
 
     // Create the request
     const leaveRequest = await LeaveRequest.create({
-        employeeId: employee._id,
+        employeeId: req.user.id as any,
         leaveTypeId,
         startDate,
         endDate,
@@ -195,23 +198,46 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
         documents,
     });
 
-    // Update pending balance
-    await LeaveBalance.findByIdAndUpdate(balance._id, {
-        $inc: { pending: totalDays }
-    });
+    console.log("this is the leave request saved in the database", leaveRequest);
 
-    // Create notification for supervisor if one is assigned
+    // Update pending balance
+    // await LeaveBalance.findByIdAndUpdate(balance._id, {
+    //     $inc: { pending: totalDays }
+    // });
+
+    // Create notification and send email to supervisor if one is assigned
     if (validatedSupervisorId) {
         try {
+            // Create in-app notification
             const { notifyLeaveRequestSubmitted } = await import("../services/notificationService");
             await notifyLeaveRequestSubmitted(
                 (leaveRequest._id as any).toString(),
                 (employee._id as any).toString(),
                 validatedSupervisorId
             );
+
+            // Send email notification to supervisor
+            const supervisorEmployee = await Employee.findById(validatedSupervisorId).populate('userId');
+            const leaveTypeDoc = await LeaveType.findById(leaveTypeId);
+
+            if (supervisorEmployee && supervisorEmployee.userId && leaveTypeDoc) {
+                const supervisorUser = supervisorEmployee.userId as any;
+
+                await EmailService.notifyLeaveRequestSubmission(
+                    supervisorUser.email,
+                    supervisorEmployee.name,
+                    employee.name,
+                    leaveTypeDoc.name,
+                    startDate.toDateString(),
+                    endDate.toDateString(),
+                    totalDays,
+                    reason,
+                    (leaveRequest._id as any).toString()
+                );
+            }
         } catch (error) {
-            console.error('Error creating notification:', error);
-            // Don't fail the request creation if notification fails
+            console.error('Error creating notification or sending email:', error);
+            // Don't fail the request creation if notification/email fails
         }
     }
 
@@ -238,8 +264,7 @@ export async function updateLeaveRequest(req: AuthenticatedRequest, res: Respons
 
     // Check if user owns this request (employees) or has permission (managers/admin)
     if (req.user?.role === "employee") {
-        const employee = await Employee.findOne({ userId: req.user.id });
-        if (!employee || !request.employeeId.equals(employee._id as any)) {
+        if (!request.employeeId.equals(req.user.id as any)) {
             return res.status(403).json({ error: "Cannot update another employee's request" });
         }
     }
@@ -257,28 +282,39 @@ export async function cancelLeaveRequest(req: AuthenticatedRequest, res: Respons
     const request = await LeaveRequest.findById(id);
     if (!request) return res.status(404).json({ error: "Leave request not found" });
 
-    // Only allow cancellation for submitted or level 1 approved requests
-    if (!["submitted", "approved_lvl1"].includes(request.status)) {
-        return res.status(400).json({ error: "Cannot cancel this request" });
-    }
-
-    // Check permissions
+    // Check permissions (owner or higher roles handled by routes)
     if (req.user?.role === "employee") {
-        const employee = await Employee.findOne({ userId: req.user.id });
-        if (!employee || !request.employeeId.equals(employee._id as any)) {
+        if (!request.employeeId.equals(req.user.id as any)) {
             return res.status(403).json({ error: "Cannot cancel another employee's request" });
         }
     }
 
-    // Update request status
-    request.status = "cancelled";
-    await request.save();
+    try {
+        // Map user id on request to employee document for balances
+        const employee = await Employee.findOne({ userId: request.employeeId });
+        if (employee) {
+            const balanceQuery = {
+                employeeId: employee._id,
+                leaveTypeId: request.leaveTypeId,
+                year: request.startDate.getFullYear(),
+            } as any;
 
-    // Update balance - remove from pending
-    await LeaveBalance.findOneAndUpdate(
-        { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
-        { $inc: { pending: -request.totalDays } }
-    );
+            if (request.status === "approved_final") {
+                // Reverse used days if already fully approved
+                await LeaveBalance.findOneAndUpdate(balanceQuery, { $inc: { used: -request.totalDays } });
+            } else if (request.status === "approved_lvl1" || request.status === "submitted") {
+                // Remove pending days
+                await LeaveBalance.findOneAndUpdate(balanceQuery, { $inc: { pending: -request.totalDays } });
+            }
+            // For rejected/cancelled there is nothing to adjust further
+        }
+    } catch (e) {
+        console.error("Failed to adjust balances on cancel:", e);
+        // Continue with deletion to satisfy user action
+    }
+
+    // Delete the request entirely
+    await LeaveRequest.findByIdAndDelete(id);
 
     return res.status(204).send();
 }
@@ -329,8 +365,9 @@ export async function approveLeaveRequest(req: AuthenticatedRequest, res: Respon
     request.status = validation.newStatus as any;
     await request.save();
 
-    // Create notification for employee about status change
+    // Create notification and send email for employee about status change
     try {
+        // Create in-app notification
         const { notifyLeaveRequestStatusChange } = await import("../services/notificationService");
         await notifyLeaveRequestStatusChange(
             (request._id as any).toString(),
@@ -340,15 +377,39 @@ export async function approveLeaveRequest(req: AuthenticatedRequest, res: Respon
             validation.level,
             comment
         );
+
+        // Send email notification to employee
+        const requestEmployee = await Employee.findById(request.employeeId).populate('userId');
+        const leaveTypeDoc = await LeaveType.findById(request.leaveTypeId);
+        const approverUser = await User.findById(req.user!.id);
+
+        if (requestEmployee && requestEmployee.userId && leaveTypeDoc && approverUser) {
+            const employeeUser = requestEmployee.userId as any;
+
+            await EmailService.notifyLeaveRequestStatusChange(
+                employeeUser.email,
+                requestEmployee.name,
+                leaveTypeDoc.name,
+                request.startDate.toDateString(),
+                request.endDate.toDateString(),
+                request.totalDays,
+                status,
+                validation.level,
+                approverUser.email, // Using approver email as name for now
+                comment,
+                (request._id as any).toString()
+            );
+        }
     } catch (error) {
-        console.error('Error creating approval notification:', error);
-        // Don't fail the approval if notification fails
+        console.error('Error creating approval notification or sending email:', error);
+        // Don't fail the approval if notification/email fails
     }
 
-    // Update balance if final approval or rejection
+    // Update balance based on final status
     if (validation.newStatus === "approved_final") {
+        // Final approval: move from pending to used
         await LeaveBalance.findOneAndUpdate(
-            { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
+            { employeeId: request.employeeId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
             {
                 $inc: {
                     pending: -request.totalDays,
@@ -357,11 +418,13 @@ export async function approveLeaveRequest(req: AuthenticatedRequest, res: Respon
             }
         );
     } else if (validation.newStatus === "rejected") {
+        // Rejection at any level: remove from pending (restore to available)
         await LeaveBalance.findOneAndUpdate(
             { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
             { $inc: { pending: -request.totalDays } }
         );
     }
+    // Note: For "approved_lvl1" status, leave remains in pending until final approval
 
     const updatedRequest = await LeaveRequest.findById(id)
         .populate("employeeId", "name email")
