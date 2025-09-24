@@ -15,7 +15,7 @@
   "author": "",
   "license": "ISC",
   "description": "",
-  "type": "module",
+  "type": "commonjs",
   "engines": {
     "node": ">=18"
   },
