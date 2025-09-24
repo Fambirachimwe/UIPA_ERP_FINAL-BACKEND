@@ -124,7 +124,7 @@ Please do not reply to this email
                 console.log(`   Message ID: ${info.messageId}`);
                 console.log(`   Response: ${info.response}\n`);
 
-            } catch (emailError) {
+            } catch (emailError: any) {
                 console.error(`❌ Failed to send email to ${email}:`, emailError.message);
                 console.error(`   Error code: ${emailError.code}\n`);
             }
@@ -133,7 +133,7 @@ Please do not reply to this email
         console.log('🎉 Email test completed!');
         console.log('📬 Check the inbox for the test emails.');
 
-    } catch (connectionError) {
+    } catch (connectionError: any) {
         console.error('❌ SMTP connection failed:', connectionError.message);
         console.error('   Error code:', connectionError.code);
 
