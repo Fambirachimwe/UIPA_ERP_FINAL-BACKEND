@@ -20,7 +20,9 @@ export function createApp() {
     const app = express();
 
     // app.use(helmet());
-    app.use(cors({ origin: ["http://localhost:3000", "http://localhost:4000", "https://uipaerpfinal-frontend-production.up.railway.app/"], credentials: true }));
+
+    const origin = process.env.NODE_ENV === 'production' ? 'https://uipaerpfinal-frontend-production.up.railway.app' : 'http://localhost:3000';
+    app.use(cors({ origin: origin, credentials: true }));
     app.use(express.json({ limit: "1mb" }));
     app.use(express.urlencoded({ extended: true }));
     app.use(cookieParser());
