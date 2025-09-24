@@ -58,7 +58,7 @@ export async function login(req: Request, res: Response) {
     res.cookie('access_token', accessToken, {
         httpOnly: true,
         secure: isProduction,
-        sameSite: 'strict',
+        sameSite: isProduction ? 'none' : 'lax',
         maxAge: 15 * 60 * 1000, // 15 minutes
         path: '/'
     });
@@ -67,7 +67,7 @@ export async function login(req: Request, res: Response) {
     res.cookie('refresh_token', refreshToken, {
         httpOnly: true,
         secure: isProduction,
-        sameSite: 'strict',
+        sameSite: isProduction ? 'none' : 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: '/api/auth/refresh' // Only send to refresh endpoint
     });
@@ -117,7 +117,7 @@ export async function refresh(req: Request, res: Response) {
         res.cookie('access_token', newAccessToken, {
             httpOnly: true,
             secure: isProduction,
-            sameSite: 'strict',
+            sameSite: isProduction ? 'none' : 'lax',
             maxAge: 15 * 60 * 1000, // 15 minutes
             path: '/'
         });
@@ -126,7 +126,7 @@ export async function refresh(req: Request, res: Response) {
         res.cookie('refresh_token', newRefreshToken, {
             httpOnly: true,
             secure: isProduction,
-            sameSite: 'strict',
+            sameSite: isProduction ? 'none' : 'lax',
             maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
             path: '/api/auth/refresh'
         });
