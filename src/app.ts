@@ -31,7 +31,7 @@ export function createApp() {
     // Serve uploaded documents statically
     app.use("/api/uploads", express.static(path.join(process.cwd(), "uploads")));
 
-    app.get("/health", (_req, res) => {
+    app.get("/api/health", (_req, res) => {
         res.json({ status: "ok" });
     });
 
