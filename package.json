@@ -6,7 +6,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/server.ts",
-    "start": "node dist/server.js",
+    "start": "npm run build && node --experimental-specifier-resolution=node dist/scripts/ensureAdmin.js && node --experimental-specifier-resolution=node dist/server.js",
+    "ensure-admin": "tsx src/scripts/ensureAdmin.ts",
     "seed": "tsx src/scripts/seed.ts",
     "test-email": "node src/scripts/emailTest.js"
   },

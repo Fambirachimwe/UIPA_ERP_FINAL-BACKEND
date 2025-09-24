@@ -82,25 +82,62 @@ export async function listLeaveRequests(req: AuthenticatedRequest, res: Response
         if (endDate) query.startDate.$lte = new Date(endDate as string);
     }
 
+
     const requests = await LeaveRequest.find(query)
         .populate("employeeId", "email")
         .populate("leaveTypeId", "name")
         .populate("approvalHistory.approverId", "email")
         .sort({ createdAt: -1 })
-        .limit(100);
+        .limit(100)
+        .lean();
 
-    // console.log("requests", requests);
+    // Enrich with employee name by joining Employee on userId (which equals employeeId)
+    const userIds = requests
+        .map((r: any) => r.employeeId?._id)
+        .filter((id: any) => !!id);
 
-    return res.json(requests);
+    let employeeByUserId = new Map<string, { name: string }>();
+    if (userIds.length > 0) {
+        const employees = await Employee.find({ userId: { $in: userIds } }, { userId: 1, name: 1 }).lean();
+        for (const emp of employees) {
+            employeeByUserId.set((emp.userId as any).toString(), { name: emp.name });
+        }
+    }
+
+
+
+    const enriched = requests.map((r: any) => {
+        const userId = r.employeeId?._id?.toString();
+        const name = userId ? employeeByUserId.get(userId)?.name : undefined;
+        if (name && r.employeeId) {
+            r.employeeId = { ...r.employeeId, name };
+        }
+        return r;
+    });
+
+    return res.json(enriched);
 }
+
+
 
 export async function getLeaveRequest(req: Request, res: Response) {
     const { id } = req.params;
     const request = await LeaveRequest.findById(id)
         .populate("employeeId", "email")
         .populate("leaveTypeId", "name")
-        .populate("approvalHistory.approverId", "email");
+        .populate("approvalHistory.approverId", "email")
+        .lean();
     if (!request) return res.status(404).json({ error: "Leave request not found" });
+
+    // Enrich employeeId with name from Employee by userId
+    const userId = (request as any).employeeId?._id;
+    if (userId) {
+        const employee = await Employee.findOne({ userId }, { name: 1 }).lean();
+        if (employee) {
+            (request as any).employeeId = { ...(request as any).employeeId, name: employee.name };
+        }
+    }
+
     return res.json(request);
 }
 
@@ -242,9 +279,18 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
     }
 
     const populatedRequest = await LeaveRequest.findById(leaveRequest._id)
-        .populate("employeeId", "name email")
+        .populate("employeeId", "email")
         .populate("leaveTypeId", "name")
-        .populate("supervisorId", "name email department");
+        .populate("supervisorId", "name email department")
+        .lean();
+
+    // Enrich employeeId with name for the create response as well
+    if (populatedRequest?.employeeId && (populatedRequest as any).employeeId._id) {
+        const emp = await Employee.findOne({ userId: (populatedRequest as any).employeeId._id }, { name: 1 }).lean();
+        if (emp) {
+            (populatedRequest as any).employeeId = { ...(populatedRequest as any).employeeId, name: emp.name };
+        }
+    }
 
     return res.status(201).json(populatedRequest);
 }
@@ -270,8 +316,19 @@ export async function updateLeaveRequest(req: AuthenticatedRequest, res: Respons
     }
 
     const updated = await LeaveRequest.findByIdAndUpdate(id, parsed.data, { new: true })
-        .populate("employeeId", "name email")
-        .populate("leaveTypeId", "name");
+        .populate("employeeId", "email")
+        .populate("leaveTypeId", "name")
+        .lean();
+
+    if (!updated) return res.status(404).json({ error: "Leave request not found" });
+
+    // Enrich name
+    if ((updated as any).employeeId?._id) {
+        const emp = await Employee.findOne({ userId: (updated as any).employeeId._id }, { name: 1 }).lean();
+        if (emp) {
+            (updated as any).employeeId = { ...(updated as any).employeeId, name: emp.name };
+        }
+    }
 
     return res.json(updated);
 }
@@ -427,8 +484,63 @@ export async function approveLeaveRequest(req: AuthenticatedRequest, res: Respon
     // Note: For "approved_lvl1" status, leave remains in pending until final approval
 
     const updatedRequest = await LeaveRequest.findById(id)
-        .populate("employeeId", "name email")
-        .populate("leaveTypeId", "name");
+        .populate("employeeId", "email")
+        .populate("leaveTypeId", "name")
+        .lean();
+
+    if (updatedRequest && (updatedRequest as any).employeeId?._id) {
+        const emp = await Employee.findOne({ userId: (updatedRequest as any).employeeId._id }, { name: 1 }).lean();
+        if (emp) {
+            (updatedRequest as any).employeeId = { ...(updatedRequest as any).employeeId, name: emp.name };
+        }
+    }
 
     return res.json(updatedRequest);
+}
+
+export async function undoFinalApproval(req: AuthenticatedRequest, res: Response) {
+    const { id } = req.params;
+
+    const request = await LeaveRequest.findById(id);
+    if (!request) return res.status(404).json({ error: "Leave request not found" });
+
+    // Only admin can undo; route will also enforce this, but double-check
+    if (req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Only admins can undo a final approval" });
+    }
+
+    if (request.status !== "approved_final") {
+        return res.status(400).json({ error: "Only final approved requests can be undone" });
+    }
+
+    console.log("request for the undo final approval but only admin can do this", request);
+
+    // Reverse balances: move from used back to pending
+    await LeaveBalance.findOneAndUpdate(
+        { employeeId: request.employeeId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
+        {
+            $inc: {
+                used: -request.totalDays,
+                pending: request.totalDays,
+            }
+        }
+    );
+
+    // Revert status to approved_lvl1 (still pending final approval)
+    request.status = "approved_lvl1" as any;
+    await request.save();
+
+    const updated = await LeaveRequest.findById(id)
+        .populate("employeeId", "email")
+        .populate("leaveTypeId", "name")
+        .lean();
+
+    if (updated && (updated as any).employeeId?._id) {
+        const emp = await Employee.findOne({ userId: (updated as any).employeeId._id }, { name: 1 }).lean();
+        if (emp) {
+            (updated as any).employeeId = { ...(updated as any).employeeId, name: emp.name };
+        }
+    }
+
+    return res.json(updated);
 }

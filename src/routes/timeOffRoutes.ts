@@ -26,6 +26,7 @@ import {
     updateLeaveRequest,
     cancelLeaveRequest,
     approveLeaveRequest,
+    undoFinalApproval,
 } from "../controllers/leaveRequestsController";
 
 export const timeOffRouter = Router();
@@ -50,6 +51,8 @@ timeOffRouter.post("/requests", requireAuth, createLeaveRequest);
 timeOffRouter.put("/requests/:id", requireAuth, updateLeaveRequest);
 timeOffRouter.delete("/requests/:id/cancel", requireAuth, cancelLeaveRequest);
 timeOffRouter.post("/requests/:id/approve", requireAuth, requireRole(["approver", "admin"]), approveLeaveRequest);
+// New: Admin can undo a final approval
+timeOffRouter.post("/requests/:id/undo-final", requireAuth, requireRole(["admin", "approver"]), undoFinalApproval);
 
 // Additional endpoints for enhanced workflow
 timeOffRouter.get("/requests/pending/mine", requireAuth, requireRole(["approver", "admin"]), listLeaveRequests);

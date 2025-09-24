@@ -41,7 +41,9 @@ export async function validateApproval(
     }
 
     // Get request employee with manager populated
-    const requestEmployee = await Employee.findById(request.employeeId).populate('manager');
+    const requestEmployee = await User.findById(request.employeeId);
+
+    // console.log("requestEmployee", requestEmployee);
     if (!requestEmployee) {
         return {
             canApprove: false,
