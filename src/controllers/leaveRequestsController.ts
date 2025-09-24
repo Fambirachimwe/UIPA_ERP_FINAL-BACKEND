@@ -237,10 +237,17 @@ export async function createLeaveRequest(req: AuthenticatedRequest, res: Respons
 
     console.log("this is the leave request saved in the database", leaveRequest);
 
-    // Update pending balance
-    // await LeaveBalance.findByIdAndUpdate(balance._id, {
-    //     $inc: { pending: totalDays }
-    // });
+    // Update pending balance immediately upon submission
+    try {
+        await LeaveBalance.findOneAndUpdate(
+            { employeeId: employee._id, leaveTypeId, year: currentYear },
+            { $inc: { pending: totalDays } },
+            { upsert: false }
+        );
+    } catch (e) {
+        console.error("Failed to increment pending balance on submission:", e);
+        // Do not fail request creation on balance update issues
+    }
 
     // Create notification and send email to supervisor if one is assigned
     if (validatedSupervisorId) {
@@ -357,8 +364,8 @@ export async function cancelLeaveRequest(req: AuthenticatedRequest, res: Respons
             } as any;
 
             if (request.status === "approved_final") {
-                // Reverse used days if already fully approved
-                await LeaveBalance.findOneAndUpdate(balanceQuery, { $inc: { used: -request.totalDays } });
+                // Reverse used days and restore allocated if already fully approved
+                await LeaveBalance.findOneAndUpdate(balanceQuery, { $inc: { used: -request.totalDays, allocated: request.totalDays } });
             } else if (request.status === "approved_lvl1" || request.status === "submitted") {
                 // Remove pending days
                 await LeaveBalance.findOneAndUpdate(balanceQuery, { $inc: { pending: -request.totalDays } });
@@ -463,23 +470,37 @@ export async function approveLeaveRequest(req: AuthenticatedRequest, res: Respon
     }
 
     // Update balance based on final status
-    if (validation.newStatus === "approved_final") {
-        // Final approval: move from pending to used
-        await LeaveBalance.findOneAndUpdate(
-            { employeeId: request.employeeId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
-            {
-                $inc: {
-                    pending: -request.totalDays,
-                    used: request.totalDays
-                }
+    try {
+        // Map user id stored on request.employeeId to Employee _id used in LeaveBalance
+        const reqEmployee = await Employee.findOne({ userId: request.employeeId }, { _id: 1 }).lean();
+        const employeeObjectId = reqEmployee?._id;
+
+        if (employeeObjectId) {
+            if (validation.newStatus === "approved_final") {
+                // Final approval: move from pending to used
+                await LeaveBalance.findOneAndUpdate(
+                    { employeeId: employeeObjectId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
+                    {
+                        $inc: {
+                            pending: -request.totalDays,
+                            used: request.totalDays,
+                            allocated: -request.totalDays
+                        }
+                    }
+                );
+            } else if (validation.newStatus === "rejected") {
+                // Rejection at any level: remove from pending (restore to available)
+                await LeaveBalance.findOneAndUpdate(
+                    { employeeId: employeeObjectId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
+                    { $inc: { pending: -request.totalDays } }
+                );
             }
-        );
-    } else if (validation.newStatus === "rejected") {
-        // Rejection at any level: remove from pending (restore to available)
-        await LeaveBalance.findOneAndUpdate(
-            { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
-            { $inc: { pending: -request.totalDays } }
-        );
+        } else {
+            console.warn("Could not resolve Employee for balance update on approval/rejection", request.employeeId);
+        }
+    } catch (e) {
+        console.error("Failed to update leave balances on approval/rejection:", e);
+        // Do not fail approval because of balance update issues
     }
     // Note: For "approved_lvl1" status, leave remains in pending until final approval
 
@@ -516,15 +537,24 @@ export async function undoFinalApproval(req: AuthenticatedRequest, res: Response
     console.log("request for the undo final approval but only admin can do this", request);
 
     // Reverse balances: move from used back to pending
-    await LeaveBalance.findOneAndUpdate(
-        { employeeId: request.employeeId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
-        {
-            $inc: {
-                used: -request.totalDays,
-                pending: request.totalDays,
-            }
+    try {
+        const reqEmployee = await Employee.findOne({ userId: request.employeeId }, { _id: 1 }).lean();
+        const employeeObjectId = reqEmployee?._id;
+        if (employeeObjectId) {
+            await LeaveBalance.findOneAndUpdate(
+                { employeeId: employeeObjectId as any, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
+                {
+                    $inc: {
+                        used: -request.totalDays,
+                        pending: request.totalDays,
+                        allocated: request.totalDays,
+                    }
+                }
+            );
         }
-    );
+    } catch (e) {
+        console.error("Failed to reverse balances on undo final approval:", e);
+    }
 
     // Revert status to approved_lvl1 (still pending final approval)
     request.status = "approved_lvl1" as any;
