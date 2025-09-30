@@ -66,6 +66,9 @@ const leaveRequestSchema = new Schema<LeaveRequestDocument>(
     },
     { timestamps: true }
 );
+// for githuib
+
+
 
 // Index for date range queries
 leaveRequestSchema.index({ startDate: 1, endDate: 1 });
