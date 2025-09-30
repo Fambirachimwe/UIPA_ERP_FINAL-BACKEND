@@ -304,7 +304,6 @@ export async function getEligibleSupervisors(req: AuthenticatedRequest, res: Res
     try {
         const currentUserId = req.user!.id;
 
-        console.log(currentUserId);
 
         // Get current user's employee record
         const currentEmployee = await Employee.findOne({ userId: currentUserId });
@@ -330,6 +329,7 @@ export async function getEligibleSupervisors(req: AuthenticatedRequest, res: Res
             },
             select: 'email role attributes'
         });
+        console.log(eligibleSupervisors);
 
         // Filter out results where userId population failed (no approval rights)
         const validSupervisors = eligibleSupervisors.filter(emp => emp.userId);

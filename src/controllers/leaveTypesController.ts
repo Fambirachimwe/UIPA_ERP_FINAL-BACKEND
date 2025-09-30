@@ -12,6 +12,13 @@ const createLeaveTypeSchema = z.object({
     maxConsecutiveDays: z.number().min(1).optional(),
     eligibility: z.string().optional(),
     requiresApproval: z.boolean().default(true),
+    // Policy flags
+    requiresBalance: z.boolean().default(true),
+    requiresDates: z.boolean().default(true),
+    allowFutureApplications: z.boolean().default(true),
+    isOpenEndedAllowed: z.boolean().default(false),
+    maxRetroactiveDays: z.number().min(0).default(0),
+    requiresAttachment: z.boolean().default(false),
 });
 
 export async function listLeaveTypes(req: AuthenticatedRequest, res: Response) {
