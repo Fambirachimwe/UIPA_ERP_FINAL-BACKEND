@@ -26,6 +26,58 @@ const options: swaggerJSDoc.Options = {
                 },
             },
             schemas: {
+                Transfer: {
+                    type: "object",
+                    properties: {
+                        id: { type: "string" },
+                        shortCode: { type: "string" },
+                        title: { type: "string" },
+                        description: { type: "string" },
+                        files: { type: "array", items: { $ref: "#/components/schemas/TransferFile" } },
+                        expiresAt: { type: "string", format: "date-time" },
+                        maxDownloads: { type: "number" },
+                        downloadCount: { type: "number" },
+                        versioning: {
+                            type: "object",
+                            properties: {
+                                mode: { type: "string", enum: ["auto", "explicit"] },
+                                currentVersion: { type: "number" },
+                            }
+                        },
+                        createdBy: { type: "string" },
+                        isActive: { type: "boolean" },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" },
+                    }
+                },
+                TransferFile: {
+                    type: "object",
+                    properties: {
+                        id: { type: "string" },
+                        transferId: { type: "string" },
+                        originalName: { type: "string" },
+                        storagePath: { type: "string" },
+                        mimeType: { type: "string" },
+                        sizeBytes: { type: "number" },
+                        drawingId: { type: "string" },
+                        version: { type: "number" },
+                        checksum: { type: "string" },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" },
+                    }
+                },
+                TransferAccessLog: {
+                    type: "object",
+                    properties: {
+                        id: { type: "string" },
+                        transferId: { type: "string" },
+                        shortCode: { type: "string" },
+                        ip: { type: "string" },
+                        userAgent: { type: "string" },
+                        status: { type: "string", enum: ["success", "password_required", "password_failed", "expired", "not_found"] },
+                        createdAt: { type: "string", format: "date-time" },
+                    }
+                },
                 User: {
                     type: "object",
                     properties: {
@@ -819,6 +871,179 @@ swaggerSpec.paths["/api/documents/{id}/versions"] = {
             },
         },
         responses: { 200: { description: "OK" } },
+    },
+};
+
+// Transfers endpoints
+swaggerSpec.paths["/api/transfers"] = {
+    get: {
+        tags: ["Transfers"],
+        summary: "List my transfers",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "OK",
+                content: { "application/json": { schema: { type: "object", properties: { transfers: { type: "array", items: { $ref: "#/components/schemas/Transfer" } } } } } },
+            },
+            401: { description: "Unauthorized" },
+        },
+    },
+    post: {
+        tags: ["Transfers"],
+        summary: "Create a new transfer with files",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+            required: true,
+            content: {
+                "multipart/form-data": {
+                    schema: {
+                        type: "object",
+                        required: ["title", "files"],
+                        properties: {
+                            title: { type: "string" },
+                            description: { type: "string" },
+                            password: { type: "string" },
+                            expiresAt: { type: "string", format: "date-time" },
+                            maxDownloads: { type: "number" },
+                            files: { type: "array", items: { type: "string", format: "binary" } },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Created",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                id: { type: "string" },
+                                shortCode: { type: "string" },
+                                shareUrl: { type: "string" },
+                                expiresAt: { type: "string", format: "date-time" },
+                                files: { type: "array", items: { type: "object" } },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { description: "Bad request" },
+            401: { description: "Unauthorized" },
+        },
+    },
+};
+swaggerSpec.paths["/api/transfers/{id}"] = {
+    get: {
+        tags: ["Transfers"],
+        summary: "Get transfer detail (with files and versions)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "OK" }, 404: { description: "Not found" } },
+    },
+};
+
+swaggerSpec.paths["/api/transfers/{id}/files"] = {
+    post: {
+        tags: ["Transfers"],
+        summary: "Add files (supports folder upload and versioning)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        requestBody: {
+            required: true,
+            content: {
+                "multipart/form-data": {
+                    schema: {
+                        type: "object",
+                        properties: {
+                            files: { type: "array", items: { type: "string", format: "binary" } },
+                        },
+                    },
+                },
+            },
+        },
+        responses: { 201: { description: "Files added" }, 404: { description: "Not found" } },
+    },
+};
+
+swaggerSpec.paths["/api/transfers/{shortCode}/resolve"] = {
+    get: {
+        tags: ["Transfers"],
+        summary: "Resolve public transfer metadata",
+        parameters: [{ in: "path", name: "shortCode", required: true, schema: { type: "string" } }],
+        responses: {
+            200: {
+                description: "OK",
+                content: { "application/json": { schema: { type: "object" } } },
+            },
+            404: { description: "Not found" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/transfers/{shortCode}/access"] = {
+    post: {
+        tags: ["Transfers"],
+        summary: "Request access to a transfer (password validation)",
+        parameters: [{ in: "path", name: "shortCode", required: true, schema: { type: "string" } }],
+        requestBody: {
+            required: false,
+            content: { "application/json": { schema: { type: "object", properties: { password: { type: "string" } } } } },
+        },
+        responses: {
+            200: {
+                description: "Access granted",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                token: { type: "string" },
+                                files: { type: "array", items: { type: "object" } },
+                                downloadAllUrl: { type: "string" },
+                            },
+                        },
+                    },
+                },
+            },
+            401: { description: "Unauthorized / password required or invalid" },
+            404: { description: "Not found" },
+            410: { description: "Expired" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/transfers/{shortCode}/download/{fileId}"] = {
+    get: {
+        tags: ["Transfers"],
+        summary: "Download a single file from a transfer (requires access token)",
+        parameters: [
+            { in: "path", name: "shortCode", required: true, schema: { type: "string" } },
+            { in: "path", name: "fileId", required: true, schema: { type: "string" } },
+            { in: "query", name: "access", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+            200: { description: "File stream", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+            401: { description: "Invalid or missing access token" },
+            404: { description: "File not found" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/transfers/{shortCode}/download-all"] = {
+    get: {
+        tags: ["Transfers"],
+        summary: "Download all files as ZIP (requires access token)",
+        parameters: [
+            { in: "path", name: "shortCode", required: true, schema: { type: "string" } },
+            { in: "query", name: "access", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+            200: { description: "ZIP stream", content: { "application/zip": { schema: { type: "string", format: "binary" } } } },
+            401: { description: "Invalid or missing access token" },
+            404: { description: "No files" },
+        },
     },
 };
 

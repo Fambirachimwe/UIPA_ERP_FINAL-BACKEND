@@ -11,6 +11,7 @@ import { contactRouter } from "./routes/contactRoutes";
 import { timeOffRouter } from "./routes/timeOffRoutes";
 import { documentRouter } from "./routes/documentRoutes";
 import { notificationRouter } from "./routes/notificationRoutes";
+import { transferRouter } from "./routes/transferRoutes";
 import { mountSwagger } from "./utils/swagger";
 import path from "path";
 
@@ -42,6 +43,7 @@ export function createApp() {
     app.use("/api/contacts", contactRouter);
     app.use("/api/time-off", timeOffRouter);
     app.use("/api/documents", documentRouter);
+    app.use("/api/transfers", transferRouter);
     app.use("/api/notifications", notificationRouter);
 
     mountSwagger(app);

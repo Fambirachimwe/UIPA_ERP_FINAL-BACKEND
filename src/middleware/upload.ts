@@ -56,3 +56,27 @@ export const documentUpload = multer({
 
 // Middleware for single document upload
 export const uploadDocument = documentUpload.single("document");
+
+// ---------------- Transfers Upload (separate config) ----------------
+
+const transfersDir = path.join(process.cwd(), "uploads", "transfers");
+if (!fs.existsSync(transfersDir)) {
+    fs.mkdirSync(transfersDir, { recursive: true });
+}
+
+const transferStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, transfersDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueName = `${randomUUID()}${path.extname(file.originalname)}`;
+        cb(null, uniqueName);
+    },
+});
+
+export const transferUpload = multer({
+    storage: transferStorage,
+    limits: {
+        fileSize: 500 * 1024 * 1024, // 500MB per file initial limit
+    },
+});

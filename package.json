@@ -39,6 +39,7 @@
   "dependencies": {
     "@types/nodemailer": "^7.0.1",
     "bcryptjs": "^3.0.2",
+    "archiver": "^6.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
