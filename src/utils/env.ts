@@ -23,6 +23,10 @@ const envSchema = z.object({
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().optional(),
+    // Cloudinary Configuration
+    CLOUDINARY_CLOUD_NAME: z.string().min(1),
+    CLOUDINARY_API_KEY: z.string().min(1),
+    CLOUDINARY_API_SECRET: z.string().min(1),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -41,6 +45,12 @@ export const env = {
     jwtRefreshSecret: parsed.data.JWT_REFRESH_SECRET,
     accessTokenTtl: parsed.data.ACCESS_TOKEN_TTL,
     refreshTokenTtl: parsed.data.REFRESH_TOKEN_TTL,
+    // Cloudinary Configuration
+    cloudinary: {
+        cloudName: parsed.data.CLOUDINARY_CLOUD_NAME,
+        apiKey: parsed.data.CLOUDINARY_API_KEY,
+        apiSecret: parsed.data.CLOUDINARY_API_SECRET,
+    },
 };
 
 function parseTtlToSeconds(input: string): number {

@@ -2,7 +2,9 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface DocumentVersion {
     version: string;
-    fileUrl: string;
+    fileUrl: string; // Will store Cloudinary URL
+    cloudinaryPublicId?: string; // Cloudinary public ID
+    cloudinaryUrl?: string; // Cloudinary secure URL
     uploadedBy: mongoose.Types.ObjectId;
     uploadedAt: Date;
     changeNotes?: string;
@@ -22,7 +24,9 @@ export interface DocumentDocument extends Document {
     projectId?: string;
 
     // File info
-    documentUrl: string; // Main document URL
+    documentUrl: string; // Main document URL (will store Cloudinary URL)
+    cloudinaryPublicId?: string; // Cloudinary public ID for main document
+    cloudinaryUrl?: string; // Cloudinary secure URL for main document
     currentVersion: string;
     versions: DocumentVersion[];
     originalFileName: string;
@@ -44,7 +48,9 @@ export interface DocumentDocument extends Document {
 
 const documentVersionSchema = new Schema({
     version: { type: String, required: true },
-    fileUrl: { type: String, required: true },
+    fileUrl: { type: String, required: true }, // Will store Cloudinary URL
+    cloudinaryPublicId: { type: String }, // Cloudinary public ID
+    cloudinaryUrl: { type: String }, // Cloudinary secure URL
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     uploadedAt: { type: Date, default: Date.now },
     changeNotes: { type: String },
@@ -65,7 +71,9 @@ const documentSchema = new Schema<DocumentDocument>(
         projectId: { type: String, ref: "Project" },
 
         // File info
-        documentUrl: { type: String, required: true },
+        documentUrl: { type: String, required: true }, // Will store Cloudinary URL
+        cloudinaryPublicId: { type: String }, // Cloudinary public ID for main document
+        cloudinaryUrl: { type: String }, // Cloudinary secure URL for main document
         currentVersion: { type: String, default: "1.0" },
         versions: [documentVersionSchema],
         originalFileName: { type: String, required: true },

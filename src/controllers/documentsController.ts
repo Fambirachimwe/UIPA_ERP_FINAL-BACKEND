@@ -117,11 +117,13 @@ export async function createDocument(req: AuthenticatedRequest, res: Response) {
             projectId,
         });
 
-        // File info
-        const documentUrl = `/uploads/documents/${req.file.filename}`;
+        // File info - use Cloudinary URL if available, otherwise fallback to local path
+        const documentUrl = req.file.cloudinary?.secure_url || `/uploads/documents/${req.file.filename}`;
         const initialVersion = {
             version: "1.0",
             fileUrl: documentUrl,
+            cloudinaryPublicId: req.file.cloudinary?.public_id,
+            cloudinaryUrl: req.file.cloudinary?.secure_url,
             uploadedBy: req.user.id,
             uploadedAt: new Date(),
             isActive: true,
@@ -138,6 +140,8 @@ export async function createDocument(req: AuthenticatedRequest, res: Response) {
             department,
             projectId,
             documentUrl,
+            cloudinaryPublicId: req.file.cloudinary?.public_id,
+            cloudinaryUrl: req.file.cloudinary?.secure_url,
             currentVersion: "1.0",
             versions: [initialVersion],
             originalFileName: req.file.originalname,
@@ -220,6 +224,12 @@ export async function downloadDocument(req: AuthenticatedRequest, res: Response)
     const document = await DocumentModel.findOne(query);
     if (!document) return res.status(404).json({ error: "Document not found" });
 
+    // If document has Cloudinary URL, redirect to it
+    if (document.cloudinaryUrl) {
+        return res.redirect(document.cloudinaryUrl);
+    }
+
+    // Fallback to local file serving for backward compatibility
     const filePath = path.join(process.cwd(), "uploads", "documents", path.basename(document.documentUrl));
 
     if (!fs.existsSync(filePath)) {
@@ -263,7 +273,9 @@ export async function uploadNewVersion(req: AuthenticatedRequest, res: Response)
         // Add new version
         const newVersionData = {
             version: newVersion,
-            fileUrl: `/uploads/documents/${req.file.filename}`,
+            fileUrl: req.file.cloudinary?.secure_url || `/uploads/documents/${req.file.filename}`,
+            cloudinaryPublicId: req.file.cloudinary?.public_id,
+            cloudinaryUrl: req.file.cloudinary?.secure_url,
             uploadedBy: req.user.id,
             uploadedAt: new Date(),
             changeNotes,
@@ -273,6 +285,8 @@ export async function uploadNewVersion(req: AuthenticatedRequest, res: Response)
         document.versions.push(newVersionData as any);
         document.currentVersion = newVersion;
         document.documentUrl = newVersionData.fileUrl;
+        document.cloudinaryPublicId = req.file.cloudinary?.public_id;
+        document.cloudinaryUrl = req.file.cloudinary?.secure_url;
         document.originalFileName = req.file.originalname;
         document.fileSize = req.file.size;
         document.mimeType = req.file.mimetype;

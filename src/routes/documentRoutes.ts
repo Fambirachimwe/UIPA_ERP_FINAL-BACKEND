@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth";
-import { uploadDocument } from "../middleware/upload";
+import { uploadDocument, uploadDocumentToCloudinary } from "../middleware/upload";
 import {
     listDocuments,
     getDocument,
@@ -20,10 +20,10 @@ documentRouter.get("/", requireAuth, listDocuments);
 documentRouter.get("/stats", requireAuth, getDocumentStats);
 documentRouter.get("/preview-reference", requireAuth, previewReference);
 documentRouter.get("/:id", requireAuth, getDocument);
-documentRouter.post("/", requireAuth, uploadDocument, createDocument);
+documentRouter.post("/", requireAuth, uploadDocument, uploadDocumentToCloudinary, createDocument);
 documentRouter.put("/:id", requireAuth, updateDocument);
 documentRouter.delete("/:id", requireAuth, deleteDocument);
 
 // File operations
 documentRouter.get("/:id/download", requireAuth, downloadDocument);
-documentRouter.post("/:id/versions", requireAuth, uploadDocument, uploadNewVersion);
+documentRouter.post("/:id/versions", requireAuth, uploadDocument, uploadDocumentToCloudinary, uploadNewVersion);

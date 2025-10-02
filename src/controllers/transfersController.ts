@@ -44,7 +44,9 @@ export async function createTransfer(req: AuthenticatedRequest, res: Response) {
                 transferId: transfer._id,
                 originalName: f.originalname,
                 relativePath: paths[i] || (f as any).relativePath || "",
-                storagePath: f.path,
+                storagePath: f.cloudinary?.secure_url || f.path, // Use Cloudinary URL if available
+                cloudinaryPublicId: f.cloudinary?.public_id,
+                cloudinaryUrl: f.cloudinary?.secure_url,
                 mimeType: f.mimetype,
                 sizeBytes: f.size,
                 version: 1,
@@ -136,7 +138,9 @@ export async function addFiles(req: AuthenticatedRequest, res: Response) {
             transferId: id,
             originalName: f.originalname,
             relativePath,
-            storagePath: f.path,
+            storagePath: f.cloudinary?.secure_url || f.path, // Use Cloudinary URL if available
+            cloudinaryPublicId: f.cloudinary?.public_id,
+            cloudinaryUrl: f.cloudinary?.secure_url,
             mimeType: f.mimetype,
             sizeBytes: f.size,
             version: nextVersion,
@@ -225,6 +229,12 @@ export async function downloadFile(req: AuthenticatedRequest, res: Response) {
     const tf = await TransferFile.findById(fileId);
     if (!tf) return res.status(404).json({ error: "File not found" });
 
+    // If file has Cloudinary URL, redirect to it
+    if (tf.cloudinaryUrl) {
+        return res.redirect(tf.cloudinaryUrl);
+    }
+
+    // Fallback to local file serving for backward compatibility
     const filePath = tf.storagePath;
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File missing" });
 
@@ -259,8 +269,21 @@ export async function downloadAll(req: AuthenticatedRequest, res: Response) {
         res.status(500).end();
     });
     archive.pipe(res);
+
     for (const f of files) {
-        if (fs.existsSync(f.storagePath)) {
+        if (f.cloudinaryUrl) {
+            // For Cloudinary files, we need to fetch them and add to archive
+            try {
+                const response = await fetch(f.cloudinaryUrl);
+                if (response.ok) {
+                    const buffer = await response.arrayBuffer();
+                    archive.append(Buffer.from(buffer), { name: f.originalName });
+                }
+            } catch (error) {
+                console.error(`Error fetching Cloudinary file ${f.originalName}:`, error);
+            }
+        } else if (fs.existsSync(f.storagePath)) {
+            // Fallback to local file
             archive.file(f.storagePath, { name: f.originalName });
         }
     }
