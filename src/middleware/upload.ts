@@ -128,3 +128,34 @@ export const uploadTransfersToCloudinary = async (req: any, res: any, next: any)
         return res.status(500).json({ error: 'Failed to upload files to cloud storage' });
     }
 };
+
+// ---------------- Vehicle Upload (separate config) ----------------
+
+// Middleware to upload vehicle documents to Cloudinary
+export const uploadVehicleDocumentToCloudinary = async (req: any, res: any, next: any) => {
+    try {
+        if (!req.file) {
+            return next();
+        }
+
+        const result = await cloudinaryService.uploadBuffer(req.file.buffer, {
+            folder: 'uip-erp/vehicles',
+            public_id: `${randomUUID()}_${req.file.originalname.replace(/\.[^/.]+$/, '')}`,
+        });
+
+        // Add Cloudinary info to the file object
+        req.file.cloudinary = {
+            public_id: result.public_id,
+            secure_url: result.secure_url,
+            original_filename: result.original_filename,
+            format: result.format,
+            resource_type: result.resource_type,
+            bytes: result.bytes,
+        };
+
+        next();
+    } catch (error) {
+        console.error('Cloudinary upload error for vehicle documents:', error);
+        return res.status(500).json({ error: 'Failed to upload file to cloud storage' });
+    }
+};

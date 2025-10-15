@@ -213,6 +213,59 @@ const options: swaggerJSDoc.Options = {
                         updatedAt: { type: "string", format: "date-time" },
                     },
                 },
+                Vehicle: {
+                    type: "object",
+                    properties: {
+                        id: { type: "string" },
+                        name: { type: "string" },
+                        registrationNumber: { type: "string" },
+                        make: { type: "string" },
+                        vehicleModel: { type: "string" },
+                        year: { type: "number" },
+                        mileage: { type: "number" },
+                        fuelType: { type: "string" },
+                        assignedTo: { $ref: "#/components/schemas/Employee" },
+                        project: { type: "string" },
+                        status: { type: "string", enum: ["active", "in maintenance", "retired"] },
+                        insurance: {
+                            type: "object",
+                            properties: {
+                                provider: { type: "string" },
+                                policyNumber: { type: "string" },
+                                expiryDate: { type: "string", format: "date" },
+                            },
+                        },
+                        serviceSchedule: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    serviceDate: { type: "string", format: "date" },
+                                    notes: { type: "string" },
+                                },
+                            },
+                        },
+                        documents: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    type: { type: "string" },
+                                    name: { type: "string" },
+                                    url: { type: "string" },
+                                    publicId: { type: "string" },
+                                    originalName: { type: "string" },
+                                    size: { type: "number" },
+                                    mimeType: { type: "string" },
+                                    uploadedBy: { type: "string" },
+                                    uploadedAt: { type: "string", format: "date-time" },
+                                },
+                            },
+                        },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" },
+                    },
+                },
             },
         },
         security: [{ bearerAuth: [] }, { cookieAuth: [] }],
@@ -1223,6 +1276,327 @@ swaggerSpec.paths["/api/employees/documents/{filename}"] = {
             401: { description: "Unauthorized" },
             404: { description: "File not found" },
             500: { description: "Internal server error" }
+        },
+    },
+};
+
+// Vehicles endpoints
+swaggerSpec.paths["/api/vehicles"] = {
+    get: {
+        tags: ["Vehicles"],
+        summary: "List vehicles with search and filtering",
+        description: "Get all vehicles with optional search and filtering. Non-admin users see only vehicles assigned to them or in their department.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+            { in: "query", name: "search", schema: { type: "string" }, description: "Search by name, registration, make, model, or project" },
+            { in: "query", name: "status", schema: { type: "string", enum: ["active", "in maintenance", "retired"] }, description: "Filter by status" },
+            { in: "query", name: "assignedTo", schema: { type: "string" }, description: "Filter by assigned employee ID" },
+            { in: "query", name: "project", schema: { type: "string" }, description: "Filter by project" },
+        ],
+        responses: {
+            200: {
+                description: "OK",
+                content: { "application/json": { schema: { type: "object", properties: { vehicles: { type: "array", items: { $ref: "#/components/schemas/Vehicle" } } } } } },
+            },
+            401: { description: "Unauthorized" },
+        },
+    },
+    post: {
+        tags: ["Vehicles"],
+        summary: "Create new vehicle (Admin/Approver only)",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+            required: true,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        required: ["name", "registrationNumber"],
+                        properties: {
+                            name: { type: "string" },
+                            registrationNumber: { type: "string" },
+                            make: { type: "string" },
+                            vehicleModel: { type: "string" },
+                            year: { type: "number" },
+                            mileage: { type: "number" },
+                            fuelType: { type: "string" },
+                            assignedTo: { type: "string", description: "Employee ID" },
+                            project: { type: "string" },
+                            status: { type: "string", enum: ["active", "in maintenance", "retired"], default: "active" },
+                            insurance: {
+                                type: "object",
+                                properties: {
+                                    provider: { type: "string" },
+                                    policyNumber: { type: "string" },
+                                    expiryDate: { type: "string", format: "date" },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: { description: "Created", content: { "application/json": { schema: { $ref: "#/components/schemas/Vehicle" } } } },
+            400: { description: "Bad request - missing required fields" },
+            403: { description: "Forbidden - insufficient permissions" },
+            409: { description: "Conflict - registration number already exists" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/vehicles/assignment-status"] = {
+    get: {
+        tags: ["Vehicles"],
+        summary: "Get vehicle assignment status overview",
+        description: "Get statistics and lists of assigned/unassigned vehicles",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "OK",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                assignedVehicles: { type: "array", items: { $ref: "#/components/schemas/Vehicle" } },
+                                unassignedVehicles: { type: "array", items: { $ref: "#/components/schemas/Vehicle" } },
+                                statusCounts: {
+                                    type: "object",
+                                    properties: {
+                                        active: { type: "number" },
+                                        inMaintenance: { type: "number" },
+                                        retired: { type: "number" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            401: { description: "Unauthorized" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/vehicles/{id}"] = {
+    get: {
+        tags: ["Vehicles"],
+        summary: "Get single vehicle",
+        description: "Get details of a specific vehicle. Non-admin users can only access vehicles assigned to them or in their department.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        responses: {
+            200: { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/Vehicle" } } } },
+            403: { description: "Forbidden - access denied" },
+            404: { description: "Vehicle not found" },
+        },
+    },
+    put: {
+        tags: ["Vehicles"],
+        summary: "Update vehicle",
+        description: "Update vehicle details. Regular employees can only update vehicles assigned to them.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        requestBody: {
+            required: true,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        properties: {
+                            name: { type: "string" },
+                            registrationNumber: { type: "string" },
+                            make: { type: "string" },
+                            vehicleModel: { type: "string" },
+                            year: { type: "number" },
+                            mileage: { type: "number" },
+                            fuelType: { type: "string" },
+                            assignedTo: { type: "string", description: "Employee ID" },
+                            project: { type: "string" },
+                            status: { type: "string", enum: ["active", "in maintenance", "retired"] },
+                            insurance: {
+                                type: "object",
+                                properties: {
+                                    provider: { type: "string" },
+                                    policyNumber: { type: "string" },
+                                    expiryDate: { type: "string", format: "date" },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/Vehicle" } } } },
+            400: { description: "Bad request" },
+            403: { description: "Forbidden - insufficient permissions" },
+            404: { description: "Vehicle not found" },
+            409: { description: "Conflict - registration number already exists" },
+        },
+    },
+    delete: {
+        tags: ["Vehicles"],
+        summary: "Delete vehicle (Admin only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        responses: {
+            204: { description: "No Content" },
+            403: { description: "Forbidden - admin access required" },
+            404: { description: "Vehicle not found" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/vehicles/{id}/documents"] = {
+    post: {
+        tags: ["Vehicle Documents"],
+        summary: "Upload vehicle document (Admin/Approver only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        requestBody: {
+            required: true,
+            content: {
+                "multipart/form-data": {
+                    schema: {
+                        type: "object",
+                        required: ["document"],
+                        properties: {
+                            document: { type: "string", format: "binary", description: "Document file to upload" },
+                            documentType: { type: "string", description: "Type of document (e.g., registration, insurance, service)" },
+                            documentName: { type: "string", description: "Custom name for the document" },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Document uploaded successfully",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                message: { type: "string" },
+                                document: { type: "object" },
+                                vehicle: { $ref: "#/components/schemas/Vehicle" },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { description: "Bad request - no file uploaded" },
+            403: { description: "Forbidden - insufficient permissions" },
+            404: { description: "Vehicle not found" },
+            500: { description: "Failed to upload document" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/vehicles/{id}/documents/{documentId}"] = {
+    delete: {
+        tags: ["Vehicle Documents"],
+        summary: "Delete vehicle document (Admin/Approver only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+            { in: "path", name: "id", required: true, schema: { type: "string" } },
+            { in: "path", name: "documentId", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+            200: {
+                description: "Document deleted successfully",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                message: { type: "string" },
+                                vehicle: { $ref: "#/components/schemas/Vehicle" },
+                            },
+                        },
+                    },
+                },
+            },
+            403: { description: "Forbidden - insufficient permissions" },
+            404: { description: "Vehicle or document not found" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/vehicles/{id}/service"] = {
+    post: {
+        tags: ["Vehicle Service"],
+        summary: "Add service record (Admin/Approver only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        requestBody: {
+            required: true,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        required: ["serviceDate"],
+                        properties: {
+                            serviceDate: { type: "string", format: "date", description: "Date of service" },
+                            notes: { type: "string", description: "Service notes" },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Service record added successfully",
+                content: {
+                    "application/json": {
+                        schema: {
+                            type: "object",
+                            properties: {
+                                message: { type: "string" },
+                                serviceRecord: { type: "object" },
+                                vehicle: { $ref: "#/components/schemas/Vehicle" },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { description: "Bad request - service date required" },
+            403: { description: "Forbidden - insufficient permissions" },
+            404: { description: "Vehicle not found" },
+        },
+    },
+};
+
+swaggerSpec.paths["/api/vehicles/{id}/status"] = {
+    put: {
+        tags: ["Vehicle Status"],
+        summary: "Update vehicle status (Admin/Approver only)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "string" } }],
+        requestBody: {
+            required: true,
+            content: {
+                "application/json": {
+                    schema: {
+                        type: "object",
+                        required: ["status"],
+                        properties: {
+                            status: { type: "string", enum: ["active", "in maintenance", "retired"] },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Status updated successfully",
+                content: { "application/json": { schema: { $ref: "#/components/schemas/Vehicle" } } },
+            },
+            400: { description: "Bad request - invalid status" },
+            403: { description: "Forbidden - insufficient permissions" },
+            404: { description: "Vehicle not found" },
         },
     },
 };
