@@ -9,22 +9,24 @@ import { CustomerFeedback } from "../models/CustomerFeedback";
 import { User } from "../models/User";
 import { Employee } from "../models/Employee";
 import { ReferenceCounter } from "../models/ReferenceCounter";
+import { AuthenticatedRequest } from "../middleware/auth";
 
 // Generate unique reference numbers
 const generateReferenceNumber = async (prefix: string): Promise<string> => {
+    const year = new Date().getFullYear();
     const counter = await ReferenceCounter.findOneAndUpdate(
-        { prefix },
-        { $inc: { sequence: 1 } },
-        { upsert: true, new: true }
+        { type: prefix, year },
+        { $inc: { lastNumber: 1 } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    const sequence = counter.sequence.toString().padStart(4, "0");
-    return `${prefix}-${new Date().getFullYear()}-${sequence}`;
+    const sequence = (counter?.lastNumber ?? 1).toString().padStart(4, "0");
+    return `${prefix}-${year}-${sequence}`;
 };
 
 // QMS Dashboard - Get overview statistics
-export const getQMSDashboard = async (req: Request, res: Response) => {
+export const getQMSDashboard = async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
 
         // Get counts for dashboard
         const [
@@ -429,9 +431,9 @@ export const searchQMS = async (req: Request, res: Response) => {
 };
 
 // Get user's QMS tasks and responsibilities
-export const getUserQMSTasks = async (req: Request, res: Response) => {
+export const getUserQMSTasks = async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
         const userId = user?.id;
 
         if (!userId) {
