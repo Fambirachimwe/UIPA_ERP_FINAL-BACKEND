@@ -1,10 +1,13 @@
 import { Request, Response } from "express";
 import { QMSDocument } from "../models/QMSDocument";
 import { User } from "../models/User";
-import { uploadToCloudinary } from "../services/cloudinaryService";
+import { cloudinaryService } from "../services/cloudinaryService";
+import { randomUUID } from "crypto";
+import { AuthenticatedRequest } from "../middleware/auth";
+import mongoose from "mongoose";
 
 // Get all documents with filtering and pagination
-export const getAllDocuments = async (req: Request, res: Response) => {
+export const getAllDocuments = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const {
             page = 1,
@@ -69,7 +72,7 @@ export const getAllDocuments = async (req: Request, res: Response) => {
 };
 
 // Get document by ID
-export const getDocumentById = async (req: Request, res: Response) => {
+export const getDocumentById = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { id } = req.params;
 
@@ -104,9 +107,15 @@ export const getDocumentById = async (req: Request, res: Response) => {
 };
 
 // Create new document
-export const createDocument = async (req: Request, res: Response) => {
+export const createDocument = async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+        }
         const {
             title,
             documentType,
@@ -125,7 +134,10 @@ export const createDocument = async (req: Request, res: Response) => {
         // Handle file upload if provided
         let fileUrl, fileName, fileSize;
         if (file) {
-            const uploadResult = await uploadToCloudinary(file, "qms/documents");
+            const uploadResult = await cloudinaryService.uploadBuffer(file.buffer, {
+                folder: 'qms/documents',
+                public_id: `${randomUUID()}_${file.originalname.replace(/\.[^/.]+$/, '')}`,
+            });
             fileUrl = uploadResult.secure_url;
             fileName = file.name;
             fileSize = file.size;
@@ -182,10 +194,16 @@ export const createDocument = async (req: Request, res: Response) => {
 };
 
 // Update document
-export const updateDocument = async (req: Request, res: Response) => {
+export const updateDocument = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+        }
         const updateData = req.body;
 
         const document = await QMSDocument.findById(id);
@@ -198,8 +216,8 @@ export const updateDocument = async (req: Request, res: Response) => {
 
         // Check if user has edit access
         const hasEditAccess = user?.role === "admin" ||
-            document.accessRights.edit.includes(user?.id) ||
-            document.createdBy.toString() === user?.id;
+            document.accessRights.edit.includes(user?.id as unknown as mongoose.Types.ObjectId) ||
+            document.createdBy.toString() === (user?.id as unknown as mongoose.Types.ObjectId).toString();
 
         if (!hasEditAccess) {
             return res.status(403).json({
@@ -210,7 +228,10 @@ export const updateDocument = async (req: Request, res: Response) => {
 
         // Handle file upload if provided
         if (updateData.file) {
-            const uploadResult = await uploadToCloudinary(updateData.file, "qms/documents");
+            const uploadResult = await cloudinaryService.uploadBuffer(updateData.file.buffer, {
+                folder: 'qms/documents',
+                public_id: `${randomUUID()}_${updateData.file.originalname.replace(/\.[^/.]+$/, '')}`,
+            });
             updateData.fileUrl = uploadResult.secure_url;
             updateData.fileName = updateData.file.name;
             updateData.fileSize = updateData.file.size;
@@ -261,10 +282,16 @@ export const updateDocument = async (req: Request, res: Response) => {
 };
 
 // Submit document for review
-export const submitForReview = async (req: Request, res: Response) => {
+export const submitForReview = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+        }
 
         const document = await QMSDocument.findById(id);
         if (!document) {
@@ -276,8 +303,12 @@ export const submitForReview = async (req: Request, res: Response) => {
 
         // Check permissions
         const canSubmit = user?.role === "admin" ||
-            document.accessRights.edit.includes(user?.id) ||
-            document.createdBy.toString() === user?.id;
+            document.accessRights.edit.includes(user?.id as unknown as mongoose.Types.ObjectId) ||
+            document.createdBy.toString() === (user?.id as unknown as mongoose.Types.ObjectId).toString();
+
+        console.log("this is the user", user);
+        console.log("this is the document", document);
+        console.log("this is the canSubmit", canSubmit);
 
         if (!canSubmit) {
             return res.status(403).json({
@@ -330,10 +361,16 @@ export const submitForReview = async (req: Request, res: Response) => {
 };
 
 // Approve document
-export const approveDocument = async (req: Request, res: Response) => {
+export const approveDocument = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+        }
         const { approvalComments } = req.body;
 
         const document = await QMSDocument.findById(id);
@@ -346,7 +383,7 @@ export const approveDocument = async (req: Request, res: Response) => {
 
         // Check approval permissions
         const canApprove = user?.role === "admin" ||
-            document.accessRights.approve.includes(user?.id);
+            document.accessRights.approve.includes(user?.id as unknown as mongoose.Types.ObjectId);
 
         if (!canApprove) {
             return res.status(403).json({
@@ -399,10 +436,16 @@ export const approveDocument = async (req: Request, res: Response) => {
 };
 
 // Obsolete document
-export const obsoleteDocument = async (req: Request, res: Response) => {
+export const obsoleteDocument = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+        }
         const { obsoleteReason } = req.body;
 
         const document = await QMSDocument.findById(id);
@@ -415,7 +458,7 @@ export const obsoleteDocument = async (req: Request, res: Response) => {
 
         // Check permissions
         const canObsolete = user?.role === "admin" ||
-            document.accessRights.approve.includes(user?.id);
+            document.accessRights.approve.includes(user?.id as unknown as mongoose.Types.ObjectId);
 
         if (!canObsolete) {
             return res.status(403).json({
@@ -459,10 +502,16 @@ export const obsoleteDocument = async (req: Request, res: Response) => {
 };
 
 // Delete document
-export const deleteDocument = async (req: Request, res: Response) => {
+export const deleteDocument = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const user = req.user;
+        const user: AuthenticatedRequest["user"] = req.user;
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+        }
 
         const document = await QMSDocument.findById(id);
         if (!document) {
@@ -497,7 +546,7 @@ export const deleteDocument = async (req: Request, res: Response) => {
 };
 
 // Get documents due for review
-export const getDocumentsDueForReview = async (req: Request, res: Response) => {
+export const getDocumentsDueForReview = async (req: AuthenticatedRequest, res: Response) => {
     try {
         const { days = 30 } = req.query;
         const daysAhead = new Date();
@@ -530,9 +579,9 @@ export const getDocumentsDueForReview = async (req: Request, res: Response) => {
 const generateDocumentNumber = async (): Promise<string> => {
     const counter = await require("../models/ReferenceCounter").findOneAndUpdate(
         { prefix: "DOC" },
-        { $inc: { sequence: 1 } },
+        { $inc: { lastNumber: 1 } },
         { upsert: true, new: true }
     );
-    const sequence = counter.sequence.toString().padStart(4, "0");
+    const sequence = counter?.lastNumber?.toString().padStart(4, "0") || "0001";
     return `DOC-${new Date().getFullYear()}-${sequence}`;
 };
