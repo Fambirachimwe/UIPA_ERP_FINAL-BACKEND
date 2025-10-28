@@ -17,7 +17,7 @@ const createLeaveTypeSchema = z.object({
     requiresDates: z.boolean().default(true),
     allowFutureApplications: z.boolean().default(true),
     isOpenEndedAllowed: z.boolean().default(false),
-    maxRetroactiveDays: z.number().min(0).default(0),
+    maxRetroactiveDays: z.number().min(0).default(2),
     requiresAttachment: z.boolean().default(false),
 });
 
